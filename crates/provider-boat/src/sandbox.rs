@@ -39,10 +39,12 @@ impl State {
         *self == Self::Stopping
     }
 
+    /// The CLI shows some API states under another name, `provisioned` as
+    /// `starting` and `archived` as `stopped`, so both names are accepted.
     fn from_boat(name: String) -> Self {
         match name.as_str() {
             "ready" | "idle" | "running" => Self::Up,
-            "init" | "provisioning" | "provisioned" | "cloning" => Self::Starting,
+            "init" | "provisioning" | "provisioned" | "starting" | "cloning" => Self::Starting,
             "stopping" | "archiving" => Self::Stopping,
             "stopped" | "archived" => Self::Stopped,
             _ => Self::Other(name),
