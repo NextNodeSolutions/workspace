@@ -260,6 +260,7 @@ dependencies = [
  "clap",
  "thiserror",
  "workspace-core",
+ "workspace-provider-boat",
 ]
 
 [[package]]

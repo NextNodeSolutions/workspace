@@ -2,7 +2,7 @@
 
 `workspace` boots a VM on a provider, records it, and provisions it with profiles. Later it closes the VM, which stops it, or removes it for good. The core knows no provider and no profile. Both are adapters that the command line picks by name.
 
-This is a scaffold. The core and the CLI work, but no provider or profile adapter exists yet, so `boot` stops at `unknown provider` until the first one lands.
+One provider exists, Boat. No profile exists yet, so `boot` brings up a bare VM.
 
 ## Build
 
@@ -21,12 +21,23 @@ ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
 `<name>` must be a DNS label of 1 to 63 lowercase letters, digits or hyphens, with no hyphen at either end.
 
-Both adapter registries are empty today:
+The profile registry is still empty:
 
 ```console
-$ workspace boot dev --provider boat
-error: unknown provider `boat`; available: none
+$ workspace boot dev --provider boat --profile pi
+error: unknown profile `pi`; available: none
 ```
+
+## Providers
+
+### Boat
+
+`--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells.
+
+- `boot` creates a `small` sandbox with an 8 hour TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
+- `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it.
+- `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. A stopped sandbox costs nothing, and `boat resume <id>` brings it back.
+- `remove` runs `boat delete`, which erases the sandbox and all of its data.
 
 ## Records
 
@@ -50,8 +61,9 @@ crates/
     src/lifecycle.rs  boot(), close() and remove()
   cli/                the workspace binary: picks adapters by name and calls the core
     src/main.rs       boot, close and remove commands
-    src/adapters.rs   provider and profile registries, both empty
+    src/adapters.rs   provider and profile registries: boat, no profile yet
     src/ledger.rs     FileLedger, the record files described above
+  provider-boat/      workspace-provider-boat: Boat sandboxes through the boat CLI
 ```
 
 This is a ports and adapters layout, the Rust version of hexagonal architecture. The core's `Cargo.toml` lists no adapter, so the compiler rejects any import of one.
