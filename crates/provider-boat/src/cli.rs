@@ -16,10 +16,11 @@ const FLAGS: [&str; 2] = ["--json", "--no-update"];
 /// seconds, so a call past this has stalled.
 pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// `boat <subcommand>` with the flags every call takes, then `args`.
+/// `boat <subcommand>` with the flags every call takes, then `args`. The
+/// subcommand may hold several words, such as `env list`.
 pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
     let mut command = Command::new(PROGRAM);
-    command.arg(subcommand).args(FLAGS).args(args);
+    command.args(subcommand.split(' ')).args(FLAGS).args(args);
     command
 }
 
@@ -43,6 +44,13 @@ pub(crate) fn call<T: DeserializeOwned>(
     subcommand: &'static str,
     args: &[&str],
 ) -> Result<T, BoatError> {
+    let stdout = run(subcommand, args)?;
+    serde_json::from_slice(&stdout).map_err(|source| BoatError::Unreadable { subcommand, source })
+}
+
+/// Runs `boat <subcommand> <args>` to the end, within [`CALL_TIMEOUT`], and
+/// returns what it prints on stdout.
+pub(crate) fn run(subcommand: &'static str, args: &[&str]) -> Result<Vec<u8>, BoatError> {
     let child = spawn(subcommand, args, Stdio::null())?;
     let output = process::collect(subcommand, child, &[], Some(CALL_TIMEOUT))?;
     if !output.status.success() {
@@ -50,8 +58,7 @@ pub(crate) fn call<T: DeserializeOwned>(
             .unwrap_or_else(|| Failure::from_stderr(&output.stderr));
         return Err(failure.into_error(subcommand));
     }
-    serde_json::from_slice(&output.stdout)
-        .map_err(|source| BoatError::Unreadable { subcommand, source })
+    Ok(output.stdout)
 }
 
 /// The JSON line `boat` ends its output with when it fails.

@@ -26,9 +26,12 @@ const DEFAULT_MACHINE_TYPE: MachineType = MachineType::Small;
 /// limit. Stopping an idle sandbox sooner is up to the profile.
 const DEFAULT_TTL: Ttl = Ttl(8 * SECONDS_PER_HOUR);
 
+/// The environment onboarding creates for workspace's sandboxes.
+const DEFAULT_ENVIRONMENT: &str = "workspace";
+
 /// Boat's options. Each one left unset falls back to the config file, then
 /// to its default.
-#[derive(Args, Clone, Copy, Default, Deserialize)]
+#[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Boat")]
 #[serde(deny_unknown_fields)]
 pub struct Options {
@@ -41,6 +44,11 @@ pub struct Options {
     /// 8h or 90m [default: 8h]
     #[arg(long = "boat-ttl", value_name = "DURATION")]
     ttl: Option<Ttl>,
+
+    /// Boat environment the sandboxes start from, which onboard sets up
+    /// [default: workspace]
+    #[arg(long = "boat-environment", value_name = "NAME")]
+    environment: Option<EnvironmentName>,
 }
 
 impl Options {
@@ -50,6 +58,7 @@ impl Options {
         Self {
             machine_type: self.machine_type.or(fallback.machine_type),
             ttl: self.ttl.or(fallback.ttl),
+            environment: self.environment.or(fallback.environment),
         }
     }
 
@@ -57,6 +66,9 @@ impl Options {
         Settings {
             machine_type: self.machine_type.unwrap_or(DEFAULT_MACHINE_TYPE),
             ttl: self.ttl.unwrap_or(DEFAULT_TTL),
+            environment: self
+                .environment
+                .unwrap_or_else(|| EnvironmentName(DEFAULT_ENVIRONMENT.to_owned())),
         }
     }
 }
@@ -65,6 +77,7 @@ impl Options {
 pub(crate) struct Settings {
     pub(crate) machine_type: MachineType,
     pub(crate) ttl: Ttl,
+    pub(crate) environment: EnvironmentName,
 }
 
 /// A Boat machine size, named as `boat new --type` takes it.
@@ -148,9 +161,53 @@ impl fmt::Display for Ttl {
     }
 }
 
+/// The name of a Boat environment: ASCII letters, digits, dots, dashes and
+/// underscores, as Boat allows. It cannot start with a dash, which `boat`
+/// would read as a flag.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub(crate) struct EnvironmentName(String);
+
+impl EnvironmentName {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl FromStr for EnvironmentName {
+    type Err = InvalidOption;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        let is_allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
+        if name.is_empty() || name.starts_with('-') || !name.chars().all(is_allowed) {
+            return Err(InvalidOption::EnvironmentName(name.to_owned()));
+        }
+        Ok(Self(name.to_owned()))
+    }
+}
+
+impl TryFrom<String> for EnvironmentName {
+    type Error = InvalidOption;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        name.parse()
+    }
+}
+
+impl fmt::Display for EnvironmentName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 /// A value that cannot be a Boat option.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum InvalidOption {
     #[error("`{0}` is not a duration: write a positive whole number then d, h, m or s, such as 8h")]
     Ttl(String),
+
+    #[error(
+        "`{0}` cannot name a Boat environment: use ASCII letters, digits, dots, dashes and underscores, and do not start with a dash"
+    )]
+    EnvironmentName(String),
 }

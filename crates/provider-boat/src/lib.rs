@@ -4,6 +4,7 @@
 //! and turned into this crate's errors. Nothing reaches the terminal.
 
 mod cli;
+mod environment;
 mod error;
 mod onboard;
 mod options;
@@ -51,11 +52,25 @@ impl Provider for Boat {
         Ok(onboard::run(&self.settings)?)
     }
 
-    /// Boat stops the sandbox once its TTL runs out, even mid-work.
+    /// The sandbox starts from the configured environment, once checked.
+    /// Boat stops it when its TTL runs out, even mid-work.
     fn boot(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
-        let Settings { machine_type, ttl } = &self.settings;
+        let Settings {
+            machine_type,
+            ttl,
+            environment,
+        } = &self.settings;
+        environment::check(environment)?;
         let ttl = ttl.seconds().to_string();
-        let id = sandbox::create(&["--type", machine_type.as_str(), "--ttl", &ttl])?;
+        let args = [
+            "--type",
+            machine_type.as_str(),
+            "--ttl",
+            &ttl,
+            "--environment",
+            environment.as_str(),
+        ];
+        let id = sandbox::create(&args)?;
         Ok(VmId::from(id))
     }
 

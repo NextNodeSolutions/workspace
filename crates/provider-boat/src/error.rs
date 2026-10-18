@@ -1,7 +1,7 @@
 use std::io;
 use std::string::FromUtf8Error;
 
-use crate::options::MachineType;
+use crate::options::{EnvironmentName, MachineType};
 use crate::sandbox::State;
 
 /// The code Boat answers with for a sandbox that does not exist, or no
@@ -53,6 +53,24 @@ pub(crate) enum BoatError {
     Unavailable {
         machine_type: MachineType,
         reason: String,
+    },
+
+    #[error(
+        "the Boat environment `{name}` does not exist: `workspace onboard --provider boat` creates it"
+    )]
+    NoEnvironment { name: EnvironmentName },
+
+    #[error(
+        "`{name}` is the default Boat environment, which other sandboxes start from, so onboarding leaves it alone: name another one with --boat-environment or `environment` in the config file"
+    )]
+    DefaultEnvironment { name: EnvironmentName },
+
+    #[error(
+        "the Boat environment `{name}` does not match what `workspace onboard --provider boat` sets: {changed}"
+    )]
+    Mismatch {
+        name: EnvironmentName,
+        changed: String,
     },
 
     #[error("`boat new` ended without printing a sandbox id")]

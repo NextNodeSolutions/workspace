@@ -1,11 +1,12 @@
-//! Prepares a Boat account for `boot`: the CLI must be signed in, and the
-//! account must be able to start the configured machine type.
+//! Prepares a Boat account for `boot`: the CLI must be signed in, the
+//! account must be able to start the configured machine type, and the
+//! environment must exist and inject only the sandbox's boat key.
 
 use serde::Deserialize;
 
-use crate::cli;
 use crate::error::BoatError;
 use crate::options::{MachineType, Settings};
+use crate::{cli, environment};
 
 /// The login state `boat status` reports once the CLI is signed in.
 const SIGNED_IN: &str = "active";
@@ -43,9 +44,11 @@ struct Offer {
 pub(crate) fn run(settings: &Settings) -> Result<String, BoatError> {
     check_signed_in()?;
     check_machine_type(settings.machine_type)?;
+    let change = environment::ensure(&settings.environment)?;
     Ok(format!(
-        "Boat is ready: `workspace boot` starts {} sandboxes, which Boat stops {} after boot.",
-        settings.machine_type, settings.ttl
+        "Boat is ready: `workspace boot` starts {} sandboxes, which Boat stops {} after boot.\n\
+         They start from the Boat environment `{}` ({change}), which gives them their own boat key and nothing else from the account.",
+        settings.machine_type, settings.ttl, settings.environment
     ))
 }
 

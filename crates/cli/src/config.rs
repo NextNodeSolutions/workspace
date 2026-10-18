@@ -24,7 +24,7 @@ struct File {
 }
 
 /// Every provider's options, as flags or as tables under `[providers]`.
-#[derive(Args, Clone, Copy, Default, Deserialize)]
+#[derive(Args, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Providers {
     #[command(flatten)]

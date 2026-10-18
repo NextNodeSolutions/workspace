@@ -39,6 +39,7 @@ Each provider reads its own table:
 [providers.boat]
 type = "small"
 ttl = "8h"
+environment = "workspace"
 ```
 
 An unknown key or table is an error, so a typo cannot pass unnoticed. Every command reads the file, so a broken file also stops `close` and `remove` until you fix it.
@@ -47,15 +48,18 @@ An unknown key or table is an error, so a typo cannot pass unnoticed. Every comm
 
 ### Boat
 
-`--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells.
+`--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells. Run `workspace onboard --provider boat` once before the first boot.
 
 | Flag | Key | Default | What it sets |
 | --- | --- | --- | --- |
 | `--boat-type` | `type` | `small` | The machine size: `small` (2 vCPU, 4 GB, half rate), `default` (4 vCPU, 8 GB), `large` (8 vCPU, 16 GB, twice the rate) or `xlarge` (16 vCPU, 32 GB, on the $100/month plan or higher). |
 | `--boat-ttl` | `ttl` | `8h` | How long after boot Boat stops the sandbox: a positive whole number followed by `d`, `h`, `m` or `s`, such as `90m`. |
+| `--boat-environment` | `environment` | `workspace` | The Boat environment the sandboxes start from: ASCII letters, digits, dots, dashes and underscores. |
 
-- `onboard` checks that the Boat CLI is signed in and that the account can start the configured type. `xlarge`, for example, needs the $100/month plan.
-- `boot` creates a sandbox of that type and TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
+A Boat environment decides what a sandbox gets from the account. Boat's default one, `base`, can pass a sandbox your GitHub access, agent logins and secrets. Workspace uses its own instead, which gives a sandbox its own boat key and nothing else. That key is scoped to its own sandbox: the sandbox can stop itself, but cannot reach any other.
+
+- `onboard` checks that the Boat CLI is signed in and that the account can start the configured type. `xlarge`, for example, needs the $100/month plan. Then it creates the environment if it is missing, and resets its toggles if they differ. Boat records each change as a new version, which later sandboxes start from, while running ones keep theirs. `onboard` refuses to touch Boat's default environment, which other sandboxes start from.
+- `boot` checks the environment first. If it is missing, or no longer gives exactly the boat key, `boot` fails before it creates anything. Then it creates a sandbox of the configured type and TTL from that environment. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
 - `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it. A script has no time limit, but it fails once its stdout or stderr passes 64 MiB.
 - `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. Boat keeps the disk of a stopped sandbox for 14 days, for free, and `boat resume <id>` brings it back meanwhile. On day 14 Boat erases the disk, and the sandbox can no longer resume.
 - `remove` runs `boat delete`, which erases the sandbox and all of its data.
