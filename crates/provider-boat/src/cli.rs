@@ -1,14 +1,20 @@
 //! Runs the `boat` CLI. Every call asks for JSON and skips the update check.
 
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::BoatError;
+use crate::process;
 
 const PROGRAM: &str = "boat";
 const FLAGS: [&str; 2] = ["--json", "--no-update"];
+
+/// Bounds the calls that only talk to the Boat API. They answer within
+/// seconds, so a call past this has stalled.
+pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// `boat <subcommand>` with the flags every call takes, then `args`.
 pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
@@ -17,14 +23,28 @@ pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
     command
 }
 
-/// Runs `boat <subcommand> <args>` to the end and reads the JSON it prints.
+/// Starts `boat <subcommand> <args>` with its stdout and stderr piped.
+pub(crate) fn spawn(
+    subcommand: &'static str,
+    args: &[&str],
+    stdin: Stdio,
+) -> Result<Child, BoatError> {
+    command(subcommand, args)
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(BoatError::Spawn)
+}
+
+/// Runs `boat <subcommand> <args>` to the end, within [`CALL_TIMEOUT`], and
+/// reads the JSON it prints.
 pub(crate) fn call<T: DeserializeOwned>(
     subcommand: &'static str,
     args: &[&str],
 ) -> Result<T, BoatError> {
-    let output = command(subcommand, args)
-        .output()
-        .map_err(BoatError::Spawn)?;
+    let child = spawn(subcommand, args, Stdio::null())?;
+    let output = process::collect(subcommand, child, &[], Some(CALL_TIMEOUT))?;
     if !output.status.success() {
         let failure = Failure::last_in(&output.stdout)
             .unwrap_or_else(|| Failure::from_stderr(&output.stderr));

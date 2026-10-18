@@ -33,8 +33,25 @@ pub(crate) enum BoatError {
         source: serde_json::Error,
     },
 
+    #[error("`boat {subcommand}` did not finish within {seconds} s, so it was killed")]
+    Stalled {
+        subcommand: &'static str,
+        seconds: u64,
+    },
+
+    #[error("`boat {subcommand}` printed more than {limit_mib} MiB on one stream")]
+    TooMuchOutput {
+        subcommand: &'static str,
+        limit_mib: u64,
+    },
+
     #[error("`boat new` ended without printing a sandbox id")]
     NoId,
+
+    #[error(
+        "`boat new` printed no sandbox id within {seconds} s, so it was killed; `boat list` shows whether it created one"
+    )]
+    CreateStalled { seconds: u64 },
 
     #[error("the sandbox is {state}, so it cannot be reached")]
     NotRunning { state: State },
@@ -53,6 +70,17 @@ pub(crate) enum BoatError {
 }
 
 impl BoatError {
+    /// Wraps a failure on the pipes to `boat <subcommand>`.
+    pub(crate) fn pipe(subcommand: &'static str) -> impl Fn(io::Error) -> Self {
+        move |source| Self::Pipe { subcommand, source }
+    }
+
+    /// Whether the Boat API answered with a refusal, rather than the call
+    /// failing to get an answer.
+    pub(crate) fn is_refusal(&self) -> bool {
+        matches!(self, Self::Refused { code: Some(_), .. })
+    }
+
     /// Whether Boat answered that the sandbox does not exist.
     pub(crate) fn is_gone(&self) -> bool {
         matches!(self, Self::Refused { code: Some(code), .. } if code == NOT_FOUND)

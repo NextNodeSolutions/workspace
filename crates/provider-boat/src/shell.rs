@@ -2,15 +2,14 @@
 //! but it takes no stdin, and Boat keeps the text and output of every exec
 //! for 90 days: secrets could only travel in the command.
 
-use std::io::Write;
-use std::process::{ChildStdin, Output, Stdio};
-use std::thread;
+use std::process::{Output, Stdio};
 
 use workspace_core::port::Shell;
 use workspace_core::{Cause, VmId};
 
 use crate::cli::{self, Failure};
 use crate::error::BoatError;
+use crate::process;
 
 const SSH: &str = "ssh";
 
@@ -24,25 +23,12 @@ impl BoatShell {
     }
 
     /// `boat ssh` quotes each argument for the remote shell, so the script
-    /// goes through as one argument to `bash -c`.
+    /// goes through as one argument to `bash -c`. There is no timeout: a
+    /// provisioning script may rightly run for a long time.
     fn execute(&self, script: &str, stdin: &[u8]) -> Result<Output, BoatError> {
-        let mut child = cli::command(SSH, &[self.vm.as_str(), "--", "bash", "-c", script])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(BoatError::Spawn)?;
-        let input = child.stdin.take().expect("stdin is piped");
-        // Another thread feeds stdin, so a script that writes a lot before
-        // reading cannot block on a full stdout pipe.
-        let output = thread::scope(|scope| {
-            scope.spawn(move || feed(input, stdin));
-            child.wait_with_output()
-        });
-        output.map_err(|source| BoatError::Pipe {
-            subcommand: SSH,
-            source,
-        })
+        let args = [self.vm.as_str(), "--", "bash", "-c", script];
+        let child = cli::spawn(SSH, &args, Stdio::piped())?;
+        process::collect(SSH, child, stdin, None)
     }
 }
 
@@ -54,12 +40,6 @@ impl Shell for BoatShell {
         }
         Ok(String::from_utf8(output.stdout).map_err(BoatError::NotUtf8)?)
     }
-}
-
-/// A script may exit before reading all of its stdin. The broken pipe that
-/// leaves is not a failure, so the outcome of the write is dropped.
-fn feed(mut input: ChildStdin, bytes: &[u8]) {
-    let _ = input.write_all(bytes);
 }
 
 /// `boat ssh` exits 1 whatever the script's exit code, and appends a JSON

@@ -1,8 +1,9 @@
 //! Creates a sandbox, reads its state, and waits for that state to change.
 
 use std::fmt;
-use std::io::{BufRead, BufReader};
-use std::process::Stdio;
+use std::io::{self, BufRead, BufReader};
+use std::process::{ChildStdout, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,7 @@ use serde::Deserialize;
 
 use crate::cli::{self, Failure};
 use crate::error::BoatError;
+use crate::process;
 
 const NEW: &str = "new";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -83,6 +85,12 @@ struct Event {
     id: Option<String>,
 }
 
+/// How `boat new` ended its part: with an id, or by exiting without one.
+enum Created {
+    Id(String),
+    Ended { last_line: String },
+}
+
 /// Starts `boat new <args>` and returns the sandbox id as soon as a line
 /// carries it. The CLI then runs on in the background until it has printed
 /// the rest, which nobody reads.
@@ -93,29 +101,57 @@ pub(crate) fn create(args: &[&str]) -> Result<String, BoatError> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(BoatError::Spawn)?;
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let mut lines = BufReader::new(stdout).lines();
+    let lines = forward_lines(child.stdout.take().expect("stdout is piped"));
+    match read_id(&lines, cli::CALL_TIMEOUT) {
+        Ok(Created::Id(id)) => {
+            thread::spawn(move || child.wait());
+            Ok(id)
+        }
+        Ok(Created::Ended { last_line }) => {
+            child.wait().map_err(BoatError::pipe(NEW))?;
+            let failure = Failure::last_in(last_line.as_bytes());
+            Err(failure.map_or(BoatError::NoId, |failure| failure.into_error(NEW)))
+        }
+        Err(error) => {
+            process::kill(&mut child);
+            Err(error)
+        }
+    }
+}
+
+/// Sends each line of `stdout` from another thread. The thread reads to the
+/// end even once nobody listens, so the CLI never blocks on a full pipe.
+fn forward_lines(stdout: ChildStdout) -> Receiver<io::Result<String>> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let _ = sender.send(line);
+        }
+    });
+    receiver
+}
+
+/// Reads lines until one carries a sandbox id, the CLI exits, or `timeout`
+/// passes.
+fn read_id(lines: &Receiver<io::Result<String>>, timeout: Duration) -> Result<Created, BoatError> {
+    let deadline = Instant::now() + timeout;
     let mut last_line = String::new();
-    while let Some(line) = lines.next() {
-        let line = line.map_err(|source| BoatError::Pipe {
-            subcommand: NEW,
-            source,
-        })?;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let line = match lines.recv_timeout(remaining) {
+            Ok(line) => line.map_err(BoatError::pipe(NEW))?,
+            Err(RecvTimeoutError::Disconnected) => return Ok(Created::Ended { last_line }),
+            Err(RecvTimeoutError::Timeout) => {
+                return Err(BoatError::CreateStalled {
+                    seconds: timeout.as_secs(),
+                });
+            }
+        };
         if let Some(id) = sandbox_id(&line) {
-            thread::spawn(move || {
-                lines.for_each(drop);
-                child.wait()
-            });
-            return Ok(id);
+            return Ok(Created::Id(id));
         }
         last_line = line;
     }
-    child.wait().map_err(|source| BoatError::Pipe {
-        subcommand: NEW,
-        source,
-    })?;
-    let failure = Failure::last_in(last_line.as_bytes());
-    Err(failure.map_or(BoatError::NoId, |failure| failure.into_error(NEW)))
 }
 
 fn sandbox_id(line: &str) -> Option<String> {

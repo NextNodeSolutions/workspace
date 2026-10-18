@@ -5,6 +5,7 @@
 
 mod cli;
 mod error;
+mod process;
 mod sandbox;
 mod shell;
 
@@ -51,9 +52,13 @@ impl Provider for Boat {
     }
 
     /// Boat refuses to stop a sandbox that is already stopped or gone, so
-    /// the state read after the request decides, not the request.
+    /// after a refusal the state decides. A call that got no answer at all
+    /// fails at once.
     fn close(&self, vm: &VmId) -> Result<(), Cause> {
-        let request = cli::call::<IgnoredAny>("stop", &[vm.as_str()]);
+        let request = match cli::call::<IgnoredAny>("stop", &[vm.as_str()]) {
+            Err(error) if !error.is_refusal() => return Err(error.into()),
+            request => request,
+        };
         let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
         match (state, request) {
             (State::Stopped | State::Gone, _) => Ok(()),
