@@ -71,12 +71,6 @@ impl Failure {
         serde_json::from_str(last_line).ok()
     }
 
-    /// Whether the Boat API refused the request, rather than the CLI or the
-    /// command it ran failing.
-    pub(crate) fn is_refusal(&self) -> bool {
-        self.code.is_some()
-    }
-
     pub(crate) fn into_error(self, subcommand: &'static str) -> BoatError {
         BoatError::Refused {
             subcommand,

@@ -62,8 +62,8 @@ pub(crate) enum BoatError {
     #[error("the sandbox is still {state} after {seconds} s")]
     TimedOut { state: State, seconds: u64 },
 
-    #[error("the script failed on the sandbox:\n{stderr}")]
-    Script { stderr: String },
+    #[error("the script failed on the sandbox: {reason}{}", on_new_line(.stderr))]
+    Script { reason: String, stderr: String },
 
     #[error("the script printed output that is not UTF-8")]
     NotUtf8(#[source] FromUtf8Error),
@@ -85,4 +85,12 @@ impl BoatError {
     pub(crate) fn is_gone(&self) -> bool {
         matches!(self, Self::Refused { code: Some(code), .. } if code == NOT_FOUND)
     }
+}
+
+/// `text` on lines of its own, or nothing when it is empty.
+fn on_new_line(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    format!("\n{text}")
 }

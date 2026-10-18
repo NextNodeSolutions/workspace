@@ -44,14 +44,25 @@ impl Shell for BoatShell {
 
 /// `boat ssh` exits 1 whatever the script's exit code, and appends a JSON
 /// line to stdout. That line carries a code only when the Boat API refused,
-/// for example on a stopped sandbox. Otherwise the script, or ssh, failed.
+/// for example on a stopped sandbox. Otherwise its message says what failed,
+/// such as the script's exit status or an ssh error.
 fn failure(output: &Output) -> BoatError {
-    match Failure::last_in(&output.stdout) {
-        Some(refusal) if refusal.is_refusal() => refusal.into_error(SSH),
-        _ => BoatError::Script {
-            stderr: String::from_utf8_lossy(&output.stderr)
-                .trim_end()
-                .to_owned(),
+    let stderr = String::from_utf8_lossy(&output.stderr)
+        .trim_end()
+        .to_owned();
+    let Some(failure) = Failure::last_in(&output.stdout) else {
+        let reason = format!("`boat ssh` ended with {}", output.status);
+        return BoatError::Script { reason, stderr };
+    };
+    match failure.into_error(SSH) {
+        BoatError::Refused {
+            code: None,
+            message,
+            ..
+        } => BoatError::Script {
+            reason: message,
+            stderr,
         },
+        refusal => refusal,
     }
 }
