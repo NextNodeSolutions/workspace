@@ -5,6 +5,7 @@
 
 mod cli;
 mod error;
+mod options;
 mod process;
 mod sandbox;
 mod shell;
@@ -16,15 +17,11 @@ use workspace_core::port::{Provider, Shell};
 use workspace_core::{Cause, VmId, VmSpec};
 
 use error::BoatError;
+use options::Settings;
 use sandbox::State;
 use shell::BoatShell;
 
-/// The operator's sizing rule: `small`, unless someone asks for more.
-const MACHINE_TYPE: &str = "small";
-
-/// Boat stops a sandbox this long after it boots, even mid-work. Its timer
-/// cannot tell when an agent goes idle, so stopping then is up to the profile.
-const HARD_LIMIT: Duration = Duration::from_secs(8 * 60 * 60);
+pub use options::Options;
 
 /// How long `shell` waits for a sandbox to come up.
 const START_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -34,12 +31,26 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 /// Boat's VMs. Boat names sandboxes itself, so a VM's name lives only in
 /// its record.
-pub struct Boat;
+pub struct Boat {
+    settings: Settings,
+}
+
+impl Boat {
+    /// Boat with `options`, each unset one at its default.
+    #[must_use]
+    pub fn new(options: Options) -> Self {
+        Self {
+            settings: options.resolve(),
+        }
+    }
+}
 
 impl Provider for Boat {
+    /// Boat stops the sandbox once its TTL runs out, even mid-work.
     fn boot(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
-        let ttl = HARD_LIMIT.as_secs().to_string();
-        let id = sandbox::create(&["--type", MACHINE_TYPE, "--ttl", &ttl])?;
+        let Settings { machine_type, ttl } = &self.settings;
+        let ttl = ttl.seconds().to_string();
+        let id = sandbox::create(&["--type", machine_type.as_str(), "--ttl", &ttl])?;
         Ok(VmId::from(id))
     }
 

@@ -2,11 +2,12 @@
 //! crate, a dependency in this crate's Cargo.toml and one line in a registry.
 
 use workspace_core::port::{Profile, Provider};
-use workspace_provider_boat::Boat;
+use workspace_provider_boat::{Boat, Options};
 
 type Registry<T> = &'static [(&'static str, fn() -> T)];
 
-const PROVIDERS: Registry<Box<dyn Provider>> = &[("boat", || Box::new(Boat))];
+const PROVIDERS: Registry<Box<dyn Provider>> =
+    &[("boat", || Box::new(Boat::new(Options::default())))];
 const PROFILES: Registry<Box<dyn Profile>> = &[];
 
 #[derive(Debug, thiserror::Error)]
