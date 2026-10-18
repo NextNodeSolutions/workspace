@@ -1,5 +1,6 @@
 //! One record file per VM, under the data directory. `boot` writes it as soon
-//! as the provider returns the id; `close` reads it to find the provider.
+//! as the provider returns the id; `close` and `remove` read it to find the
+//! provider, and `remove` deletes it.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
@@ -23,7 +24,7 @@ pub enum LedgerError {
     NoDataDirectory,
     #[error("vm id `{0}` cannot name a record file")]
     UnsafeId(VmId),
-    #[error("no record of {0}: `workspace close` only closes VMs that `workspace boot` recorded")]
+    #[error("no record of {0}: only VMs that `workspace boot` recorded can be closed or removed")]
     Unknown(VmId),
     #[error("{} names no provider", .0.display())]
     NoProvider(PathBuf),

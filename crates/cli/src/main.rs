@@ -11,7 +11,7 @@ use ledger::FileLedger;
 use workspace_core::{VmId, VmSpec, lifecycle};
 
 #[derive(Parser)]
-#[command(about = "Boot and close VMs on any provider")]
+#[command(about = "Boot, close and remove VMs on any provider")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -27,8 +27,10 @@ enum Command {
         #[arg(long = "profile")]
         profiles: Vec<String>,
     },
-    /// Close a recorded VM on the provider that booted it
+    /// Stop a recorded VM on the provider that booted it; it stays recorded
     Close { id: String },
+    /// Delete a recorded VM and its data for good, then its record
+    Remove { id: String },
 }
 
 fn main() -> ExitCode {
@@ -49,6 +51,7 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             profiles,
         } => boot(&name, &provider, &profiles),
         Command::Close { id } => close(&VmId::from(id)),
+        Command::Remove { id } => remove(&VmId::from(id)),
     }
 }
 
@@ -68,7 +71,14 @@ fn boot(name: &str, provider_name: &str, profile_names: &[String]) -> Result<(),
 fn close(vm: &VmId) -> Result<(), Box<dyn Error>> {
     let ledger = FileLedger::find(vm)?;
     let provider = adapters::provider(ledger.provider())?;
-    lifecycle::close(provider.as_ref(), &ledger, vm)?;
+    lifecycle::close(provider.as_ref(), vm)?;
+    Ok(())
+}
+
+fn remove(vm: &VmId) -> Result<(), Box<dyn Error>> {
+    let ledger = FileLedger::find(vm)?;
+    let provider = adapters::provider(ledger.provider())?;
+    lifecycle::remove(provider.as_ref(), &ledger, vm)?;
     Ok(())
 }
 

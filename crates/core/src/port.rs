@@ -19,12 +19,22 @@ pub trait Provider {
     /// When the VM is not running or does not become reachable.
     fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Cause>;
 
-    /// Stops and releases the VM. Closing a VM that is already gone succeeds.
+    /// Stops the VM so it no longer runs. The provider may keep its disk, so
+    /// the VM still exists. Closing a VM that is already stopped or gone
+    /// succeeds.
     ///
     /// # Errors
     ///
     /// When the VM may still be running.
     fn close(&self, vm: &VmId) -> Result<(), Cause>;
+
+    /// Deletes the VM and its data for good, running or not. Removing a VM
+    /// that is already gone succeeds.
+    ///
+    /// # Errors
+    ///
+    /// When the VM may still exist.
+    fn remove(&self, vm: &VmId) -> Result<(), Cause>;
 }
 
 /// Runs commands inside a VM, whatever the transport (ssh, provider API).
@@ -65,7 +75,7 @@ pub trait Ledger {
     /// When the record may not have been written.
     fn record(&self, vm: &VmId, spec: &VmSpec) -> Result<(), Cause>;
 
-    /// Removes the record of a closed VM. Forgetting a VM with no record
+    /// Removes the record of a removed VM. Forgetting a VM with no record
     /// succeeds.
     ///
     /// # Errors

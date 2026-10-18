@@ -1,6 +1,6 @@
 # workspace
 
-`workspace` boots a VM on a provider, records it, and provisions it with profiles. It closes the VM later. The core knows no provider and no profile. Both are adapters that the command line picks by name.
+`workspace` boots a VM on a provider, records it, and provisions it with profiles. Later it closes the VM, which stops it, or removes it for good. The core knows no provider and no profile. Both are adapters that the command line picks by name.
 
 This is a scaffold. The core and the CLI work, but no provider or profile adapter exists yet, so `boot` stops at `unknown provider` until the first one lands.
 
@@ -16,7 +16,8 @@ ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 | Command | What it does |
 | --- | --- |
 | `workspace boot <name> --provider <provider> [--profile <profile>]...` | Boots a VM, records it, waits until it answers, applies each profile in order, then prints the VM id. |
-| `workspace close <id>` | Closes a VM that `boot` recorded, on the provider named in its record, then deletes the record. |
+| `workspace close <id>` | Stops a VM that `boot` recorded, on the provider named in its record. The VM still exists and its record stays. |
+| `workspace remove <id>` | Deletes a recorded VM and its data for good, then deletes the record. |
 
 `<name>` must be a DNS label of 1 to 63 lowercase letters, digits or hyphens, with no hyphen at either end.
 
@@ -36,7 +37,7 @@ provider=boat
 name=dev
 ```
 
-`boot` writes the record as soon as the provider returns the id, before it waits on the VM. If you interrupt a boot, the record is already on disk. List the directory to find the VM, then run `workspace close <id>`.
+`boot` writes the record as soon as the provider returns the id, before it waits on the VM. If you interrupt a boot, the record is already on disk. List the directory to find the VM, then run `workspace close <id>` or `workspace remove <id>`.
 
 ## Layout
 
@@ -46,9 +47,9 @@ crates/
     src/vm.rs         VmSpec with its validated name, VmId
     src/port.rs       the Provider, Shell, Profile and Ledger traits
     src/error.rs      Error for the core's failures, Cause for an adapter's
-    src/lifecycle.rs  boot() and close()
+    src/lifecycle.rs  boot(), close() and remove()
   cli/                the workspace binary: picks adapters by name and calls the core
-    src/main.rs       boot and close commands
+    src/main.rs       boot, close and remove commands
     src/adapters.rs   provider and profile registries, both empty
     src/ledger.rs     FileLedger, the record files described above
 ```
@@ -59,10 +60,10 @@ This is a ports and adapters layout, the Rust version of hexagonal architecture.
 
 | Trait | Implemented by | Contract |
 | --- | --- | --- |
-| `Provider` | Boat, AWS, Cloudflare, a local hypervisor | `boot` returns the id as soon as the provider assigns one. `shell` waits until the VM answers. `close` succeeds when the VM is already gone. |
+| `Provider` | Boat, AWS, Cloudflare, a local hypervisor | `boot` returns the id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM and succeeds when it is already stopped or gone. `remove` deletes it for good and succeeds when it is already gone. |
 | `Shell` | the provider's transport, ssh or an API | `run(script, stdin)` returns stdout and fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | Pi with its skills, a cron setup | `provision(&dyn Shell)` must be safe to run twice. A profile sees only the shell, so it works the same on every provider. |
-| `Ledger` | `FileLedger` in the CLI | `record` runs before anything waits on the VM. `forget` runs once the VM is closed. |
+| `Ledger` | `FileLedger` in the CLI | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. |
 
 Adapters report failures as a `Cause`, a boxed error that the core attaches to its own `Error` without reading it. No provider type reaches the core.
 
@@ -79,7 +80,7 @@ The core does not change.
 - `boot` writes a VM's record as soon as its provider returns the id. One window remains, inside `Provider::boot`, between the provider allocating the VM and returning its id. Adapters must return as early as they can.
 - A failure after boot leaves the VM running, and the error names it. That covers recording, reaching the VM and provisioning. Nothing closes a VM automatically.
 - If recording itself fails, the error message is the only place the id appears.
-- `close` keeps the record when the provider fails, so you can run it again.
+- `close` keeps the record, since a stopped VM still exists. `remove` keeps it when the provider fails, so you can run it again.
 
 ## Development
 

@@ -42,14 +42,21 @@ pub enum Error {
         cause: Cause,
     },
 
-    #[error("could not close {vm}; its record is kept")]
+    #[error("could not close {vm}; it may still be running")]
     Close {
         vm: VmId,
         #[source]
         cause: Cause,
     },
 
-    #[error("closed {vm} but could not remove its record")]
+    #[error("could not remove {vm}; its record is kept")]
+    Remove {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
+    #[error("removed {vm} but could not delete its record")]
     Forget {
         vm: VmId,
         #[source]

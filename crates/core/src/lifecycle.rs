@@ -1,4 +1,4 @@
-//! What the core does: boot a VM ready for its profiles, and close it.
+//! What the core does: boot a VM ready for its profiles, close it, remove it.
 
 use crate::port::{Ledger, Profile, Provider, Shell};
 use crate::{Error, VmId, VmSpec};
@@ -35,15 +35,27 @@ pub fn boot(
     Ok(vm)
 }
 
-/// Closes a VM, then removes its record.
+/// Stops a VM. Its record stays, since the VM still exists.
 ///
 /// # Errors
 ///
-/// [`Error::Close`] when the provider fails to release the VM: the record is
-/// kept so the close can be retried. [`Error::Forget`] when the VM is closed
-/// but its record remains.
-pub fn close(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result<(), Error> {
+/// [`Error::Close`] when the provider fails to stop the VM.
+pub fn close(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
     provider.close(vm).map_err(|cause| Error::Close {
+        vm: vm.clone(),
+        cause,
+    })
+}
+
+/// Deletes a VM for good, then removes its record.
+///
+/// # Errors
+///
+/// [`Error::Remove`] when the provider fails to delete the VM: the record is
+/// kept so the removal can be retried. [`Error::Forget`] when the VM is
+/// deleted but its record remains.
+pub fn remove(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result<(), Error> {
+    provider.remove(vm).map_err(|cause| Error::Remove {
         vm: vm.clone(),
         cause,
     })?;
