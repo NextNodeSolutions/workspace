@@ -35,9 +35,11 @@ error: unknown profile `pi`; available: none
 `--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells.
 
 - `boot` creates a `small` sandbox with an 8 hour TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
-- `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it.
-- `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. A stopped sandbox costs nothing, and `boat resume <id>` brings it back.
+- `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it. A script has no time limit, but it fails once its stdout or stderr passes 64 MiB.
+- `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. Boat keeps the disk of a stopped sandbox for 14 days, for free, and `boat resume <id>` brings it back meanwhile. On day 14 Boat erases the disk, and the sandbox can no longer resume.
 - `remove` runs `boat delete`, which erases the sandbox and all of its data.
+
+Every other `boat` call is killed after 60 s without an answer.
 
 ## Records
 
