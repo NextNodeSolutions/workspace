@@ -20,6 +20,13 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("booted {vm} but could not record it; it is still running")]
+    Record {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("booted {vm} but could not reach it; it is still running")]
     Shell {
         vm: VmId,
@@ -35,8 +42,15 @@ pub enum Error {
         cause: Cause,
     },
 
-    #[error("could not close {vm}")]
+    #[error("could not close {vm}; its record is kept")]
     Close {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
+    #[error("closed {vm} but could not remove its record")]
+    Forget {
         vm: VmId,
         #[source]
         cause: Cause,

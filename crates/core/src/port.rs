@@ -53,3 +53,23 @@ pub trait Profile {
     /// When a step fails; the VM is left as the failed step found it.
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause>;
 }
+
+/// Remembers which VMs exist, so an interrupted boot never loses a VM that is
+/// still running and billed.
+pub trait Ledger {
+    /// Records a VM. Called as soon as the provider returns its id, before
+    /// anything waits on the VM.
+    ///
+    /// # Errors
+    ///
+    /// When the record may not have been written.
+    fn record(&self, vm: &VmId, spec: &VmSpec) -> Result<(), Cause>;
+
+    /// Removes the record of a closed VM. Forgetting a VM with no record
+    /// succeeds.
+    ///
+    /// # Errors
+    ///
+    /// When the record may still exist.
+    fn forget(&self, vm: &VmId) -> Result<(), Cause>;
+}

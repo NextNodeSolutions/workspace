@@ -1,22 +1,30 @@
 //! What the core does: boot a VM ready for its profiles, and close it.
 
-use crate::port::{Profile, Provider, Shell};
+use crate::port::{Ledger, Profile, Provider, Shell};
 use crate::{Error, VmId, VmSpec};
 
-/// Boots a VM, waits until it is reachable, then applies `profiles` in order.
+/// Boots a VM, records it, waits until it is reachable, then applies
+/// `profiles` in order. The record is written before anything waits on the
+/// VM, so interrupting a boot never loses a running VM.
 ///
 /// # Errors
 ///
-/// [`Error::Boot`] when the provider fails to start the VM. [`Error::Shell`]
-/// and [`Error::Provision`] mean the VM booted but is not ready: it is left
-/// running, never closed automatically, and the error names it.
+/// [`Error::Boot`] when the provider fails to start the VM. [`Error::Record`],
+/// [`Error::Shell`] and [`Error::Provision`] mean the VM booted but is not
+/// ready: it is left running, never closed automatically, and the error names
+/// it.
 pub fn boot(
     provider: &dyn Provider,
+    ledger: &dyn Ledger,
     profiles: &[Box<dyn Profile>],
     spec: &VmSpec,
 ) -> Result<VmId, Error> {
     let vm = provider.boot(spec).map_err(|cause| Error::Boot {
         name: spec.name().to_owned(),
+        cause,
+    })?;
+    ledger.record(&vm, spec).map_err(|cause| Error::Record {
+        vm: vm.clone(),
         cause,
     })?;
     let shell = provider.shell(&vm).map_err(|cause| Error::Shell {
@@ -27,11 +35,19 @@ pub fn boot(
     Ok(vm)
 }
 
+/// Closes a VM, then removes its record.
+///
 /// # Errors
 ///
-/// [`Error::Close`] when the provider fails to release the VM.
-pub fn close(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
+/// [`Error::Close`] when the provider fails to release the VM: the record is
+/// kept so the close can be retried. [`Error::Forget`] when the VM is closed
+/// but its record remains.
+pub fn close(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result<(), Error> {
     provider.close(vm).map_err(|cause| Error::Close {
+        vm: vm.clone(),
+        cause,
+    })?;
+    ledger.forget(vm).map_err(|cause| Error::Forget {
         vm: vm.clone(),
         cause,
     })

@@ -1,11 +1,13 @@
 //! Composition root: reads the command line, picks the adapters, calls the core.
 
 mod adapters;
+mod ledger;
 
 use std::error::Error;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use ledger::FileLedger;
 use workspace_core::{VmId, VmSpec, lifecycle};
 
 #[derive(Parser)]
@@ -17,7 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Boot a VM, provision it with each profile, print its id
+    /// Boot a VM, record it, provision it with each profile, print its id
     Boot {
         name: String,
         #[arg(long)]
@@ -25,12 +27,8 @@ enum Command {
         #[arg(long = "profile")]
         profiles: Vec<String>,
     },
-    /// Close a VM
-    Close {
-        id: String,
-        #[arg(long)]
-        provider: String,
-    },
+    /// Close a recorded VM on the provider that booted it
+    Close { id: String },
 }
 
 fn main() -> ExitCode {
@@ -49,21 +47,28 @@ fn run(command: Command) -> Result<(), Box<dyn Error>> {
             name,
             provider,
             profiles,
-        } => {
-            let spec = VmSpec::new(&name)?;
-            let provider = adapters::provider(&provider)?;
-            let profiles = profiles
-                .iter()
-                .map(|profile| adapters::profile(profile))
-                .collect::<Result<Vec<_>, _>>()?;
-            let vm = lifecycle::boot(provider.as_ref(), &profiles, &spec)?;
-            println!("{vm}");
-        }
-        Command::Close { id, provider } => {
-            let provider = adapters::provider(&provider)?;
-            lifecycle::close(provider.as_ref(), &VmId::from(id))?;
-        }
+        } => boot(&name, &provider, &profiles),
+        Command::Close { id } => close(&VmId::from(id)),
     }
+}
+
+fn boot(name: &str, provider_name: &str, profile_names: &[String]) -> Result<(), Box<dyn Error>> {
+    let spec = VmSpec::new(name)?;
+    let provider = adapters::provider(provider_name)?;
+    let profiles = profile_names
+        .iter()
+        .map(|profile| adapters::profile(profile))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ledger = FileLedger::for_provider(provider_name)?;
+    let vm = lifecycle::boot(provider.as_ref(), &ledger, &profiles, &spec)?;
+    println!("{vm}");
+    Ok(())
+}
+
+fn close(vm: &VmId) -> Result<(), Box<dyn Error>> {
+    let ledger = FileLedger::find(vm)?;
+    let provider = adapters::provider(ledger.provider())?;
+    lifecycle::close(provider.as_ref(), &ledger, vm)?;
     Ok(())
 }
 
