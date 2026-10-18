@@ -1,6 +1,7 @@
 use std::io;
 use std::string::FromUtf8Error;
 
+use crate::options::MachineType;
 use crate::sandbox::State;
 
 /// The code Boat answers with for a sandbox that does not exist, or no
@@ -43,6 +44,15 @@ pub(crate) enum BoatError {
     TooMuchOutput {
         subcommand: &'static str,
         limit_mib: u64,
+    },
+
+    #[error("the Boat CLI is not signed in: run `boat login`")]
+    SignedOut,
+
+    #[error("this Boat account cannot start `{machine_type}` sandboxes: {reason}")]
+    Unavailable {
+        machine_type: MachineType,
+        reason: String,
     },
 
     #[error("`boat new` ended without printing a sandbox id")]

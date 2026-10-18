@@ -4,6 +4,15 @@ use crate::{Cause, VmId, VmSpec};
 
 /// Where VMs run: Boat, AWS, Cloudflare, a local hypervisor.
 pub trait Provider {
+    /// Prepares the provider account so that `boot` can run, and returns a
+    /// summary for the user. Running it again leaves what is already set up
+    /// as it is.
+    ///
+    /// # Errors
+    ///
+    /// When the account is not ready for `boot`.
+    fn onboard(&self) -> Result<String, Cause>;
+
     /// Starts a VM and returns its id as soon as the provider assigns one, so
     /// a VM that never becomes reachable still has an id the caller can close.
     ///

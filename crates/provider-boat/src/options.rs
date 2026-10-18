@@ -68,7 +68,7 @@ pub(crate) struct Settings {
 }
 
 /// A Boat machine size, named as `boat new --type` takes it.
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum MachineType {
     /// 2 vCPU, 4 GB, at half the default rate

@@ -5,6 +5,7 @@
 
 mod cli;
 mod error;
+mod onboard;
 mod options;
 mod process;
 mod sandbox;
@@ -46,6 +47,10 @@ impl Boat {
 }
 
 impl Provider for Boat {
+    fn onboard(&self) -> Result<String, Cause> {
+        Ok(onboard::run(&self.settings)?)
+    }
+
     /// Boat stops the sandbox once its TTL runs out, even mid-work.
     fn boot(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
         let Settings { machine_type, ttl } = &self.settings;

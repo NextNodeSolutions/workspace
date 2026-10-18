@@ -28,6 +28,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Prepare a provider account for boot and say what boot will do; safe to run again
+    Onboard {
+        #[command(flatten)]
+        provider: ProviderArgs,
+    },
     /// Boot a VM, record it, provision it with each profile, print its id
     Boot {
         /// 1 to 63 lowercase letters, digits or hyphens
@@ -49,7 +54,7 @@ enum Command {
 /// line. They win over the config file.
 #[derive(Args)]
 struct ProviderArgs {
-    /// Provider to run the VM on, such as boat
+    /// Provider to use, such as boat
     #[arg(long)]
     provider: String,
     #[command(flatten)]
@@ -70,6 +75,7 @@ fn main() -> ExitCode {
 fn run(command: Command, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
     let file = config::load(config)?;
     match command {
+        Command::Onboard { provider } => onboard(provider, file),
         Command::Boot {
             name,
             profiles,
@@ -78,6 +84,14 @@ fn run(command: Command, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
         Command::Close { id } => close(&VmId::from(id), file),
         Command::Remove { id } => remove(&VmId::from(id), file),
     }
+}
+
+fn onboard(args: ProviderArgs, file: Providers) -> Result<(), Box<dyn Error>> {
+    let ProviderArgs { provider, options } = args;
+    let provider = adapters::provider(&provider, options.or(file))?;
+    let summary = lifecycle::onboard(provider.as_ref())?;
+    println!("{summary}");
+    Ok(())
 }
 
 fn boot(

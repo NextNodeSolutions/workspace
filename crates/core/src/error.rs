@@ -13,6 +13,12 @@ pub enum Error {
     )]
     InvalidName { name: String },
 
+    #[error("the provider is not ready to boot VMs")]
+    Onboard {
+        #[source]
+        cause: Cause,
+    },
+
     #[error("could not boot `{name}`")]
     Boot {
         name: String,

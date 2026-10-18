@@ -1,6 +1,6 @@
 # workspace
 
-`workspace` boots a VM on a provider, records it, and provisions it with profiles. Later it closes the VM, which stops it, or removes it for good. The core knows no provider and no profile. Both are adapters that the command line picks by name.
+`workspace` prepares a provider account once, then boots a VM on it, records it, and provisions it with profiles. Later it closes the VM, which stops it, or removes it for good. The core knows no provider and no profile. Both are adapters that the command line picks by name.
 
 One provider exists, Boat. No profile exists yet, so `boot` brings up a bare VM.
 
@@ -15,6 +15,7 @@ ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
 | Command | What it does |
 | --- | --- |
+| `workspace onboard --provider <provider>` | Prepares the provider account for `boot`, then says what `boot` will do with the current options. Run it once, and again after you change them. It leaves what is already set up as it is. |
 | `workspace boot <name> --provider <provider> [--profile <profile>]...` | Boots a VM, records it, waits until it answers, applies each profile in order, then prints the VM id. |
 | `workspace close <id>` | Stops a VM that `boot` recorded, on the provider named in its record. The VM still exists and its record stays. |
 | `workspace remove <id>` | Deletes a recorded VM and its data for good, then deletes the record. |
@@ -53,6 +54,7 @@ An unknown key or table is an error, so a typo cannot pass unnoticed. Every comm
 | `--boat-type` | `type` | `small` | The machine size: `small` (2 vCPU, 4 GB, half rate), `default` (4 vCPU, 8 GB), `large` (8 vCPU, 16 GB, twice the rate) or `xlarge` (16 vCPU, 32 GB, on the $100/month plan or higher). |
 | `--boat-ttl` | `ttl` | `8h` | How long after boot Boat stops the sandbox: a positive whole number followed by `d`, `h`, `m` or `s`, such as `90m`. |
 
+- `onboard` checks that the Boat CLI is signed in and that the account can start the configured type. `xlarge`, for example, needs the $100/month plan.
 - `boot` creates a sandbox of that type and TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
 - `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it. A script has no time limit, but it fails once its stdout or stderr passes 64 MiB.
 - `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. Boat keeps the disk of a stopped sandbox for 14 days, for free, and `boat resume <id>` brings it back meanwhile. On day 14 Boat erases the disk, and the sandbox can no longer resume.
@@ -79,9 +81,9 @@ crates/
     src/vm.rs         VmSpec with its validated name, VmId
     src/port.rs       the Provider, Shell, Profile and Ledger traits
     src/error.rs      Error for the core's failures, Cause for an adapter's
-    src/lifecycle.rs  boot(), close() and remove()
+    src/lifecycle.rs  onboard(), boot(), close() and remove()
   cli/                the workspace binary: picks adapters by name and calls the core
-    src/main.rs       boot, close and remove commands
+    src/main.rs       onboard, boot, close and remove commands
     src/config.rs     the config file, and every provider's options
     src/adapters.rs   provider and profile registries: boat, no profile yet
     src/ledger.rs     FileLedger, the record files described above
@@ -95,7 +97,7 @@ This is a ports and adapters layout, the Rust version of hexagonal architecture.
 
 | Trait | Implemented by | Contract |
 | --- | --- | --- |
-| `Provider` | Boat, AWS, Cloudflare, a local hypervisor | `boot` returns the id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM and succeeds when it is already stopped or gone. `remove` deletes it for good and succeeds when it is already gone. |
+| `Provider` | Boat, AWS, Cloudflare, a local hypervisor | `onboard` prepares the account and is safe to run again. `boot` returns the id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM and succeeds when it is already stopped or gone. `remove` deletes it for good and succeeds when it is already gone. |
 | `Shell` | the provider's transport, ssh or an API | `run(script, stdin)` returns stdout and fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | Pi with its skills, a cron setup | `provision(&dyn Shell)` must be safe to run twice. A profile sees only the shell, so it works the same on every provider. |
 | `Ledger` | `FileLedger` in the CLI | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. |

@@ -1,7 +1,18 @@
-//! What the core does: boot a VM ready for its profiles, close it, remove it.
+//! What the core does: prepare a provider, boot a VM ready for its profiles,
+//! close it, remove it.
 
 use crate::port::{Ledger, Profile, Provider, Shell};
 use crate::{Error, VmId, VmSpec};
+
+/// Prepares the provider account for `boot`, and returns the provider's
+/// summary of it.
+///
+/// # Errors
+///
+/// [`Error::Onboard`] when the account is not ready.
+pub fn onboard(provider: &dyn Provider) -> Result<String, Error> {
+    provider.onboard().map_err(|cause| Error::Onboard { cause })
+}
 
 /// Boots a VM, records it, waits until it is reachable, then applies
 /// `profiles` in order. The record is written before anything waits on the
