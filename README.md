@@ -28,13 +28,32 @@ $ workspace boot dev --provider boat --profile pi
 error: unknown profile `pi`; available: none
 ```
 
+## Config
+
+A provider option comes from the command line, else from the config file, else from the provider's default. The config file is `$XDG_CONFIG_HOME/workspace/config.toml`, or `~/.config/workspace/config.toml` when `XDG_CONFIG_HOME` is unset. Without it, every option keeps its default. `--config <path>` reads another file, which must exist.
+
+Each provider reads its own table:
+
+```toml
+[providers.boat]
+type = "small"
+ttl = "8h"
+```
+
+An unknown key or table is an error, so a typo cannot pass unnoticed. Every command reads the file, so a broken file also stops `close` and `remove` until you fix it.
+
 ## Providers
 
 ### Boat
 
 `--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells.
 
-- `boot` creates a `small` sandbox with an 8 hour TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
+| Flag | Key | Default | What it sets |
+| --- | --- | --- | --- |
+| `--boat-type` | `type` | `small` | The machine size: `small` (2 vCPU, 4 GB, half rate), `default` (4 vCPU, 8 GB), `large` (8 vCPU, 16 GB, twice the rate) or `xlarge` (16 vCPU, 32 GB, on the $100/month plan or higher). |
+| `--boat-ttl` | `ttl` | `8h` | How long after boot Boat stops the sandbox: a positive whole number followed by `d`, `h`, `m` or `s`, such as `90m`. |
+
+- `boot` creates a sandbox of that type and TTL. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
 - `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it. A script has no time limit, but it fails once its stdout or stderr passes 64 MiB.
 - `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. Boat keeps the disk of a stopped sandbox for 14 days, for free, and `boat resume <id>` brings it back meanwhile. On day 14 Boat erases the disk, and the sandbox can no longer resume.
 - `remove` runs `boat delete`, which erases the sandbox and all of its data.
@@ -63,8 +82,10 @@ crates/
     src/lifecycle.rs  boot(), close() and remove()
   cli/                the workspace binary: picks adapters by name and calls the core
     src/main.rs       boot, close and remove commands
+    src/config.rs     the config file, and every provider's options
     src/adapters.rs   provider and profile registries: boat, no profile yet
     src/ledger.rs     FileLedger, the record files described above
+    src/xdg.rs        the XDG base directories
   provider-boat/      workspace-provider-boat: Boat sandboxes through the boat CLI
 ```
 
@@ -86,6 +107,7 @@ Adapters report failures as a `Cause`, a boxed error that the core attaches to i
 1. Create `crates/provider-<name>` or `crates/profile-<name>`, depending on `workspace-core`, and implement the trait.
 2. Add the crate to `crates/cli/Cargo.toml`.
 3. Add one line to `PROVIDERS` or `PROFILES` in `crates/cli/src/adapters.rs`.
+4. For a provider with options, add its options struct to `Providers` in `crates/cli/src/config.rs`. It gives the provider its flags and its config table.
 
 The core does not change.
 

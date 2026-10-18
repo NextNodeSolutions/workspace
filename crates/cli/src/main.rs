@@ -1,18 +1,27 @@
-//! Composition root: reads the command line, picks the adapters, calls the core.
+//! Composition root: reads the command line and the config file, picks the
+//! adapters, calls the core.
 
 mod adapters;
+mod config;
 mod ledger;
+mod xdg;
 
 use std::error::Error;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+use config::Providers;
 use ledger::FileLedger;
 use workspace_core::{VmId, VmSpec, lifecycle};
 
 #[derive(Parser)]
 #[command(about = "Boot, close and remove VMs on any provider")]
 struct Cli {
+    /// Read options from this file [default: ~/.config/workspace/config.toml]
+    #[arg(long, global = true, value_name = "PATH")]
+    config: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -21,11 +30,14 @@ struct Cli {
 enum Command {
     /// Boot a VM, record it, provision it with each profile, print its id
     Boot {
+        /// 1 to 63 lowercase letters, digits or hyphens
         name: String,
-        #[arg(long)]
-        provider: String,
-        #[arg(long = "profile")]
+        /// Profile to apply once the VM answers; repeat it to apply several in order
+        #[arg(long = "profile", value_name = "PROFILE")]
         profiles: Vec<String>,
+        // Last, so the headings of provider options do not swallow other flags.
+        #[command(flatten)]
+        provider: ProviderArgs,
     },
     /// Stop a recorded VM on the provider that booted it; it stays recorded
     Close { id: String },
@@ -33,8 +45,20 @@ enum Command {
     Remove { id: String },
 }
 
+/// The provider a command runs on, and the options it gets from the command
+/// line. They win over the config file.
+#[derive(Args)]
+struct ProviderArgs {
+    /// Provider to run the VM on, such as boat
+    #[arg(long)]
+    provider: String,
+    #[command(flatten)]
+    options: Providers,
+}
+
 fn main() -> ExitCode {
-    match run(Cli::parse().command) {
+    let cli = Cli::parse();
+    match run(cli.command, cli.config.as_deref()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             report(error.as_ref());
@@ -43,41 +67,51 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Command) -> Result<(), Box<dyn Error>> {
+fn run(command: Command, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let file = config::load(config)?;
     match command {
         Command::Boot {
             name,
-            provider,
             profiles,
-        } => boot(&name, &provider, &profiles),
-        Command::Close { id } => close(&VmId::from(id)),
-        Command::Remove { id } => remove(&VmId::from(id)),
+            provider,
+        } => boot(&name, provider, file, &profiles),
+        Command::Close { id } => close(&VmId::from(id), file),
+        Command::Remove { id } => remove(&VmId::from(id), file),
     }
 }
 
-fn boot(name: &str, provider_name: &str, profile_names: &[String]) -> Result<(), Box<dyn Error>> {
+fn boot(
+    name: &str,
+    args: ProviderArgs,
+    file: Providers,
+    profile_names: &[String],
+) -> Result<(), Box<dyn Error>> {
+    let ProviderArgs {
+        provider: provider_name,
+        options,
+    } = args;
     let spec = VmSpec::new(name)?;
-    let provider = adapters::provider(provider_name)?;
+    let provider = adapters::provider(&provider_name, options.or(file))?;
     let profiles = profile_names
         .iter()
         .map(|profile| adapters::profile(profile))
         .collect::<Result<Vec<_>, _>>()?;
-    let ledger = FileLedger::for_provider(provider_name)?;
+    let ledger = FileLedger::for_provider(&provider_name)?;
     let vm = lifecycle::boot(provider.as_ref(), &ledger, &profiles, &spec)?;
     println!("{vm}");
     Ok(())
 }
 
-fn close(vm: &VmId) -> Result<(), Box<dyn Error>> {
+fn close(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
     let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider())?;
+    let provider = adapters::provider(ledger.provider(), file)?;
     lifecycle::close(provider.as_ref(), vm)?;
     Ok(())
 }
 
-fn remove(vm: &VmId) -> Result<(), Box<dyn Error>> {
+fn remove(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
     let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider())?;
+    let provider = adapters::provider(ledger.provider(), file)?;
     lifecycle::remove(provider.as_ref(), &ledger, vm)?;
     Ok(())
 }

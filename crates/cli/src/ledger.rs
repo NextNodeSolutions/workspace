@@ -3,10 +3,12 @@
 //! provider, and `remove` deletes it.
 
 use std::path::{Path, PathBuf};
-use std::{env, fs, io};
+use std::{fs, io};
 
 use workspace_core::port::Ledger;
 use workspace_core::{Cause, VmId, VmSpec};
+
+use crate::xdg;
 
 const RECORDS_DIRECTORY: &str = "workspace/vms";
 const DEFAULT_DATA_HOME: &str = ".local/share";
@@ -94,10 +96,7 @@ impl Ledger for FileLedger {
 }
 
 fn records_directory() -> Result<PathBuf, LedgerError> {
-    let xdg_data_home = env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty());
-    let data_home = xdg_data_home
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| Path::new(&home).join(DEFAULT_DATA_HOME)))
+    let data_home = xdg::base_directory("XDG_DATA_HOME", DEFAULT_DATA_HOME)
         .ok_or(LedgerError::NoDataDirectory)?;
     Ok(data_home.join(RECORDS_DIRECTORY))
 }

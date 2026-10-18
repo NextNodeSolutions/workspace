@@ -1,14 +1,18 @@
 //! The adapters this binary can plug into the core. Adding one is an adapter
 //! crate, a dependency in this crate's Cargo.toml and one line in a registry.
+//! A provider with options also adds them to [`Providers`].
 
 use workspace_core::port::{Profile, Provider};
-use workspace_provider_boat::{Boat, Options};
+use workspace_provider_boat::Boat;
 
-type Registry<T> = &'static [(&'static str, fn() -> T)];
+use crate::config::Providers;
 
-const PROVIDERS: Registry<Box<dyn Provider>> =
-    &[("boat", || Box::new(Boat::new(Options::default())))];
-const PROFILES: Registry<Box<dyn Profile>> = &[];
+/// Adapter names, each with the function that builds the adapter.
+type Registry<F> = &'static [(&'static str, F)];
+
+const PROVIDERS: Registry<fn(Providers) -> Box<dyn Provider>> =
+    &[("boat", |options| Box::new(Boat::new(options.boat)))];
+const PROFILES: Registry<fn() -> Box<dyn Profile>> = &[];
 
 #[derive(Debug, thiserror::Error)]
 #[error("unknown {kind} `{name}`; available: {available}")]
@@ -18,18 +22,25 @@ pub struct UnknownAdapter {
     available: String,
 }
 
-pub fn provider(name: &str) -> Result<Box<dyn Provider>, UnknownAdapter> {
-    build("provider", PROVIDERS, name)
+/// The provider named `name`, built with `options`.
+pub fn provider(name: &str, options: Providers) -> Result<Box<dyn Provider>, UnknownAdapter> {
+    let create = find("provider", PROVIDERS, name)?;
+    Ok(create(options))
 }
 
 pub fn profile(name: &str) -> Result<Box<dyn Profile>, UnknownAdapter> {
-    build("profile", PROFILES, name)
+    let create = find("profile", PROFILES, name)?;
+    Ok(create())
 }
 
-fn build<T>(kind: &'static str, registry: Registry<T>, name: &str) -> Result<T, UnknownAdapter> {
+fn find<F: Copy>(
+    kind: &'static str,
+    registry: Registry<F>,
+    name: &str,
+) -> Result<F, UnknownAdapter> {
     let entry = registry.iter().find(|(key, _)| *key == name);
     entry
-        .map(|(_, create)| create())
+        .map(|&(_, create)| create)
         .ok_or_else(|| UnknownAdapter {
             kind,
             name: name.to_owned(),
@@ -37,7 +48,7 @@ fn build<T>(kind: &'static str, registry: Registry<T>, name: &str) -> Result<T, 
         })
 }
 
-fn list_names<T>(registry: Registry<T>) -> String {
+fn list_names<F>(registry: Registry<F>) -> String {
     if registry.is_empty() {
         return "none".to_owned();
     }
