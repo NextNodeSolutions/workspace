@@ -56,7 +56,9 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Documentation
 
-- Update `docs/` in the same commit as the behavior it describes.
+- **The docs describe the intended behavior.** That covers `docs/`, the README and the `AGENTS.md` files. When a change makes them wrong, do not just rewrite them to match. First check that the change is expected: the task asks for it, or the user confirms it.
+  - If it is expected, update the docs in the same commit as the change.
+  - If it is not, the docs win. Bring the code back in line with them, or stop and ask.
 - Docs explain concepts, flows, states and the reasons for choices. They never list files, copy constants from the code, or pin versions or dates, since those go stale. Point to the code or to `--help` for values.
 - Diagrams are Mermaid. Render each one before committing to check that it parses.
 - The `AGENTS.md` files follow the same rules: each rule explains why, and none of them indexes the code.
