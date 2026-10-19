@@ -1,19 +1,13 @@
-//! Prepares a Boat account for `boot`: the CLI must be signed in, the
-//! account must be able to start the configured machine type, and the
-//! environment must exist and inject only the sandbox's boat key.
-
 use serde::Deserialize;
 
 use crate::error::BoatError;
 use crate::options::{MachineType, Settings};
 use crate::{cli, environment};
 
-/// The login state `boat status` reports once the CLI is signed in.
 const SIGNED_IN: &str = "active";
 
 const NOT_LISTED: &str = "Boat does not offer it";
 
-/// What `boat status` prints, down to the field read here.
 #[derive(Deserialize)]
 struct Status {
     account: Option<Account>,
@@ -25,14 +19,12 @@ struct Account {
     login_state: String,
 }
 
-/// What `boat limits` prints, down to the field read here.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Limits {
     machine_types: Vec<Offer>,
 }
 
-/// Whether the account can start one machine type, and if not, why.
 #[derive(Deserialize)]
 struct Offer {
     #[serde(rename = "type")]

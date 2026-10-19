@@ -1,7 +1,3 @@
-//! Runs scripts on a sandbox over `boat ssh`. `boat exec` would avoid ssh,
-//! but it takes no stdin, and Boat keeps the text and output of every exec
-//! for 90 days: secrets could only travel in the command.
-
 use std::process::{Output, Stdio};
 
 use workspace_core::port::Shell;
@@ -22,9 +18,6 @@ impl BoatShell {
         Self { vm }
     }
 
-    /// `boat ssh` quotes each argument for the remote shell, so the script
-    /// goes through as one argument to `bash -c`. There is no timeout: a
-    /// provisioning script may rightly run for a long time.
     fn execute(&self, script: &str, stdin: &[u8]) -> Result<Output, BoatError> {
         let args = [self.vm.as_str(), "--", "bash", "-c", script];
         let child = cli::spawn(SSH, &args, Stdio::piped())?;
@@ -42,10 +35,6 @@ impl Shell for BoatShell {
     }
 }
 
-/// `boat ssh` exits 1 whatever the script's exit code, and appends a JSON
-/// line to stdout. That line carries a code only when the Boat API refused,
-/// for example on a stopped sandbox. Otherwise its message says what failed,
-/// such as the script's exit status or an ssh error.
 fn failure(output: &Output) -> BoatError {
     let stderr = String::from_utf8_lossy(&output.stderr)
         .trim_end()

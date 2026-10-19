@@ -1,6 +1,3 @@
-//! What a user can set for Boat, on the command line or in the config file,
-//! and the defaults for what they leave unset.
-
 use std::fmt;
 use std::str::FromStr;
 
@@ -11,7 +8,6 @@ const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
 
-/// The suffixes a [`Ttl`] takes, largest first, with their length in seconds.
 const UNITS: [(&str, u64); 4] = [
     ("d", SECONDS_PER_DAY),
     ("h", SECONDS_PER_HOUR),
@@ -19,18 +15,12 @@ const UNITS: [(&str, u64); 4] = [
     ("s", 1),
 ];
 
-/// The operator's sizing rule: `small`, unless someone asks for more.
 const DEFAULT_MACHINE_TYPE: MachineType = MachineType::Small;
 
-/// Boat's timer cannot tell when an agent goes idle, so this is a hard
-/// limit. Stopping an idle sandbox sooner is up to the profile.
 const DEFAULT_TTL: Ttl = Ttl(8 * SECONDS_PER_HOUR);
 
-/// The environment onboarding creates for workspace's sandboxes.
 const DEFAULT_ENVIRONMENT: &str = "workspace";
 
-/// Boat's options. Each one left unset falls back to the config file, then
-/// to its default.
 #[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Boat")]
 #[serde(deny_unknown_fields)]
@@ -52,7 +42,6 @@ pub struct Options {
 }
 
 impl Options {
-    /// These options, with each unset one taken from `fallback`.
     #[must_use]
     pub fn or(self, fallback: Self) -> Self {
         Self {
@@ -73,14 +62,12 @@ impl Options {
     }
 }
 
-/// The options with every default filled in.
 pub(crate) struct Settings {
     pub(crate) machine_type: MachineType,
     pub(crate) ttl: Ttl,
     pub(crate) environment: EnvironmentName,
 }
 
-/// A Boat machine size, named as `boat new --type` takes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum MachineType {
@@ -111,8 +98,6 @@ impl fmt::Display for MachineType {
     }
 }
 
-/// A sandbox lifetime: a whole number of days, hours, minutes or seconds,
-/// such as `8h`.
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct Ttl(u64);
@@ -150,7 +135,6 @@ impl TryFrom<String> for Ttl {
     }
 }
 
-/// Written in the largest unit that divides it, so `8h` reads back as `8h`.
 impl fmt::Display for Ttl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (name, unit) = UNITS
@@ -161,9 +145,6 @@ impl fmt::Display for Ttl {
     }
 }
 
-/// The name of a Boat environment: ASCII letters, digits, dots, dashes and
-/// underscores, as Boat allows. It cannot start with a dash, which `boat`
-/// would read as a flag.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct EnvironmentName(String);
@@ -200,7 +181,6 @@ impl fmt::Display for EnvironmentName {
     }
 }
 
-/// A value that cannot be a Boat option.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum InvalidOption {
     #[error("`{0}` is not a duration: write a positive whole number then d, h, m or s, such as 8h")]

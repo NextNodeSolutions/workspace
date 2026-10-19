@@ -1,13 +1,8 @@
-//! The adapters this binary can plug into the core. Adding one is an adapter
-//! crate, a dependency in this crate's Cargo.toml and one line in a registry.
-//! A provider with options also adds them to [`Providers`].
-
 use workspace_core::port::{Profile, Provider};
 use workspace_provider_boat::Boat;
 
 use crate::config::Providers;
 
-/// Adapter names, each with the function that builds the adapter.
 type Registry<F> = &'static [(&'static str, F)];
 
 const PROVIDERS: Registry<fn(Providers) -> Box<dyn Provider>> =
@@ -22,7 +17,6 @@ pub struct UnknownAdapter {
     available: String,
 }
 
-/// The provider named `name`, built with `options`.
 pub fn provider(name: &str, options: Providers) -> Result<Box<dyn Provider>, UnknownAdapter> {
     let create = find("provider", PROVIDERS, name)?;
     Ok(create(options))

@@ -1,7 +1,3 @@
-//! One record file per VM, under the data directory. `boot` writes it as soon
-//! as the provider returns the id; `close` and `remove` read it to find the
-//! provider, and `remove` deletes it.
-
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
@@ -40,7 +36,6 @@ pub enum LedgerError {
 }
 
 impl FileLedger {
-    /// A ledger that records VMs booted on `provider`.
     pub fn for_provider(provider: &str) -> Result<Self, LedgerError> {
         Ok(Self {
             directory: records_directory()?,
@@ -48,7 +43,6 @@ impl FileLedger {
         })
     }
 
-    /// The ledger that recorded `vm`, carrying the provider it was booted on.
     pub fn find(vm: &VmId) -> Result<Self, LedgerError> {
         let directory = records_directory()?;
         let path = record_path(&directory, vm)?;

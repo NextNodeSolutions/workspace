@@ -1,8 +1,3 @@
-//! The config file: `$XDG_CONFIG_HOME/workspace/config.toml`, or the file
-//! `--config` names. Each provider reads its own table, such as
-//! `[providers.boat]`. A command-line option wins over the file, and the
-//! file over the provider's defaults.
-
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
@@ -15,7 +10,6 @@ use crate::xdg;
 const CONFIG_FILE: &str = "workspace/config.toml";
 const DEFAULT_CONFIG_HOME: &str = ".config";
 
-/// What the config file holds.
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
@@ -23,7 +17,6 @@ struct File {
     providers: Providers,
 }
 
-/// Every provider's options, as flags or as tables under `[providers]`.
 #[derive(Args, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Providers {
@@ -33,7 +26,6 @@ pub struct Providers {
 }
 
 impl Providers {
-    /// These options, with each unset one taken from `fallback`.
     pub fn or(self, fallback: Self) -> Self {
         Self {
             boat: self.boat.or(fallback.boat),
@@ -57,8 +49,6 @@ pub enum ConfigError {
     },
 }
 
-/// The provider options in the file at `path`, or else in the default file.
-/// A missing default file sets no option, but a missing `path` is an error.
 pub fn load(path: Option<&Path>) -> Result<Providers, ConfigError> {
     let (path, is_required) = match path {
         Some(path) => (path.to_owned(), true),

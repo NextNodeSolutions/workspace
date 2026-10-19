@@ -4,8 +4,6 @@ use std::string::FromUtf8Error;
 use crate::options::{EnvironmentName, MachineType};
 use crate::sandbox::State;
 
-/// The code Boat answers with for a sandbox that does not exist, or no
-/// longer does.
 const NOT_FOUND: &str = "not_found";
 
 #[derive(Debug, thiserror::Error)]
@@ -98,24 +96,19 @@ pub(crate) enum BoatError {
 }
 
 impl BoatError {
-    /// Wraps a failure on the pipes to `boat <subcommand>`.
     pub(crate) fn pipe(subcommand: &'static str) -> impl Fn(io::Error) -> Self {
         move |source| Self::Pipe { subcommand, source }
     }
 
-    /// Whether the Boat API answered with a refusal, rather than the call
-    /// failing to get an answer.
     pub(crate) fn is_refusal(&self) -> bool {
         matches!(self, Self::Refused { code: Some(_), .. })
     }
 
-    /// Whether Boat answered that the sandbox does not exist.
     pub(crate) fn is_gone(&self) -> bool {
         matches!(self, Self::Refused { code: Some(code), .. } if code == NOT_FOUND)
     }
 }
 
-/// `text` on lines of its own, or nothing when it is empty.
 fn on_new_line(text: &str) -> String {
     if text.is_empty() {
         return String::new();

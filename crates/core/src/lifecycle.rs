@@ -1,12 +1,6 @@
-//! What the core does: prepare a provider, boot a VM ready for its profiles,
-//! close it, remove it.
-
 use crate::port::{Ledger, Profile, Provider, Shell};
 use crate::{Error, VmId, VmSpec};
 
-/// Prepares the provider account for `boot`, and returns the provider's
-/// summary of it.
-///
 /// # Errors
 ///
 /// [`Error::Onboard`] when the account is not ready.
@@ -14,10 +8,6 @@ pub fn onboard(provider: &dyn Provider) -> Result<String, Error> {
     provider.onboard().map_err(|cause| Error::Onboard { cause })
 }
 
-/// Boots a VM, records it, waits until it is reachable, then applies
-/// `profiles` in order. The record is written before anything waits on the
-/// VM, so interrupting a boot never loses a running VM.
-///
 /// # Errors
 ///
 /// [`Error::Boot`] when the provider fails to start the VM. [`Error::Record`],
@@ -46,8 +36,6 @@ pub fn boot(
     Ok(vm)
 }
 
-/// Stops a VM. Its record stays, since the VM still exists.
-///
 /// # Errors
 ///
 /// [`Error::Close`] when the provider fails to stop the VM.
@@ -58,8 +46,6 @@ pub fn close(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
     })
 }
 
-/// Deletes a VM for good, then removes its record.
-///
 /// # Errors
 ///
 /// [`Error::Remove`] when the provider fails to delete the VM: the record is

@@ -1,6 +1,3 @@
-//! Composition root: reads the command line and the config file, picks the
-//! adapters, calls the core.
-
 mod adapters;
 mod config;
 mod ledger;
@@ -40,7 +37,6 @@ enum Command {
         /// Profile to apply once the VM answers; repeat it to apply several in order
         #[arg(long = "profile", value_name = "PROFILE")]
         profiles: Vec<String>,
-        // Last, so the headings of provider options do not swallow other flags.
         #[command(flatten)]
         provider: ProviderArgs,
     },
@@ -50,8 +46,6 @@ enum Command {
     Remove { id: String },
 }
 
-/// The provider a command runs on, and the options it gets from the command
-/// line. They win over the config file.
 #[derive(Args)]
 struct ProviderArgs {
     /// Provider to use, such as boat

@@ -1,5 +1,3 @@
-//! Creates a sandbox, reads its state, and waits for that state to change.
-
 use std::fmt;
 use std::io::{self, BufRead, BufReader};
 use std::process::{ChildStdout, Stdio};
@@ -16,19 +14,13 @@ use crate::process;
 const NEW: &str = "new";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Where a sandbox stands, as far as this adapter cares.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum State {
-    /// Accepts ssh.
     Up,
     Starting,
-    /// Boat snapshots the disk, then stops the machine.
     Stopping,
-    /// Nothing runs, and the disk is kept.
     Stopped,
-    /// Deleted, or never existed.
     Gone,
-    /// Any other state, such as `error`, as Boat names it.
     Other(String),
 }
 
@@ -41,8 +33,7 @@ impl State {
         *self == Self::Stopping
     }
 
-    /// The CLI shows some API states under another name, `provisioned` as
-    /// `starting` and `archived` as `stopped`, so both names are accepted.
+    /// The CLI shows `provisioned` as `starting` and `archived` as `stopped`, so both names are accepted.
     fn from_boat(name: String) -> Self {
         match name.as_str() {
             "ready" | "idle" | "running" => Self::Up,
@@ -68,7 +59,6 @@ impl fmt::Display for State {
     }
 }
 
-/// What `boat info` prints, down to the one field read here.
 #[derive(Deserialize)]
 struct Info {
     sandbox: Sandbox,
@@ -79,21 +69,16 @@ struct Sandbox {
     state: String,
 }
 
-/// A line `boat new` prints. Its first line already carries the id.
 #[derive(Deserialize)]
 struct Event {
     id: Option<String>,
 }
 
-/// How `boat new` ended its part: with an id, or by exiting without one.
 enum Created {
     Id(String),
     Ended { last_line: String },
 }
 
-/// Starts `boat new <args>` and returns the sandbox id as soon as a line
-/// carries it. The CLI then runs on in the background until it has printed
-/// the rest, which nobody reads.
 pub(crate) fn create(args: &[&str]) -> Result<String, BoatError> {
     let mut child = cli::command(NEW, args)
         .stdin(Stdio::null())
@@ -119,8 +104,6 @@ pub(crate) fn create(args: &[&str]) -> Result<String, BoatError> {
     }
 }
 
-/// Sends each line of `stdout` from another thread. The thread reads to the
-/// end even once nobody listens, so the CLI never blocks on a full pipe.
 fn forward_lines(stdout: ChildStdout) -> Receiver<io::Result<String>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
@@ -131,8 +114,6 @@ fn forward_lines(stdout: ChildStdout) -> Receiver<io::Result<String>> {
     receiver
 }
 
-/// Reads lines until one carries a sandbox id, the CLI exits, or `timeout`
-/// passes.
 fn read_id(lines: &Receiver<io::Result<String>>, timeout: Duration) -> Result<Created, BoatError> {
     let deadline = Instant::now() + timeout;
     let mut last_line = String::new();
@@ -159,8 +140,6 @@ fn sandbox_id(line: &str) -> Option<String> {
     event.id
 }
 
-/// Reads the state of sandbox `id` every [`POLL_INTERVAL`] while
-/// `is_transient` holds, and returns the first state for which it does not.
 pub(crate) fn wait_while(
     id: &str,
     timeout: Duration,
