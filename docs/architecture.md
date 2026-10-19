@@ -1,6 +1,6 @@
 # Architecture
 
-`workspace` follows ports and adapters, the Rust version of hexagonal architecture. A small core holds the logic and knows no provider. Providers and profiles are adapters that plug into it.
+`workspace` follows ports and adapters. A small core holds the logic and knows no provider or profile. Adapters plug into it through traits, called ports, and the binary wires them together.
 
 ## The pieces
 
@@ -9,36 +9,30 @@ flowchart LR
     user([You]) --> cli
     subgraph binary [the workspace binary]
         cli["cli<br/>commands, config, records"]
-        core["core<br/>lifecycle and ports"]
-        boat["provider-boat<br/>Boat adapter"]
+        core["core<br/>logic and ports"]
+        adapters["adapters<br/>one crate per provider or profile"]
     end
     cli -- calls --> core
-    cli -- builds --> boat
-    boat -. implements the ports of .-> core
-    boat -- runs --> boatcli[[boat CLI]]
+    cli -- builds by name --> adapters
+    adapters -. implement the ports of .-> core
+    adapters -- talk to --> outside[[the provider]]
     cli -- reads and writes --> files[(config file<br/>and records)]
 ```
 
-| Crate | Role | Depends on |
-| --- | --- | --- |
-| `core` (`workspace-core`) | The logic: onboard, boot, close, remove. It defines the ports and does no IO. | nothing in this repo |
-| `cli` (`workspace`) | The binary. It reads the command line and the config file, picks adapters by name, keeps the records, and calls the core. | `core`, every adapter |
-| `provider-boat` | Runs VMs as Boat sandboxes, through the `boat` CLI. | `core` |
-
-The core's `Cargo.toml` lists no adapter, so the compiler rejects any import of one. Adding a provider never changes the core.
+- **The core** does no IO and depends on no adapter, so the compiler rejects any import of one.
+- **The cli** is the only part that knows every adapter. It builds them by the names given on the command line.
+- **An adapter** depends on the core only. Adding one never changes the core.
 
 ## Ports
 
-A port is a trait in `crates/core/src/port.rs`. Adapters implement it, and the core calls only the trait.
+| Port | Contract |
+| --- | --- |
+| `Provider` | `onboard` prepares the account and is safe to repeat. `boot` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
+| `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
+| `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
 
-| Port | Implemented by | Contract |
-| --- | --- | --- |
-| `Provider` | Boat | `onboard` prepares the account and is safe to repeat. `boot` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
-| `Shell` | the provider's transport, such as ssh | `run(script, stdin)` returns stdout, and fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
-| `Profile` | none yet | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
-| `Ledger` | `FileLedger`, in the CLI | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. |
-
-An adapter reports a failure as a `Cause`: a boxed error that the core wraps in its own `Error` without reading it. No provider type reaches the core.
+An adapter reports a failure as an opaque cause. The core wraps it in its own error without reading it, so no provider type leaks into the core. The binary prints the error, then one line per underlying cause.
 
 ## Commands step by step
 
@@ -51,10 +45,10 @@ sequenceDiagram
     participant CLI as cli
     participant Core as core
     participant P as Provider
-    You->>CLI: workspace onboard --provider boat
+    You->>CLI: workspace onboard --provider NAME
     CLI->>CLI: load the config file, then put the flags over it
     CLI->>CLI: build the provider with those options
-    CLI->>Core: lifecycle onboard
+    CLI->>Core: onboard
     Core->>P: onboard()
     P-->>Core: summary
     Core-->>CLI: summary
@@ -73,9 +67,9 @@ sequenceDiagram
     participant L as Ledger
     participant Pr as Profiles
     participant S as Shell
-    You->>CLI: workspace boot dev --provider boat
+    You->>CLI: workspace boot NAME --provider NAME
     CLI->>CLI: check the name, build the provider and the profiles
-    CLI->>Core: lifecycle boot
+    CLI->>Core: boot
     Core->>P: boot(spec)
     P-->>Core: VM id, before the VM is ready
     Core->>L: record(id, spec)
@@ -107,11 +101,11 @@ sequenceDiagram
     L-->>CLI: the provider named in the record
     CLI->>CLI: build that provider
     alt close
-        CLI->>Core: lifecycle close
+        CLI->>Core: close
         Core->>P: close(ID)
         Note over L: the record stays
     else remove
-        CLI->>Core: lifecycle remove
+        CLI->>Core: remove
         Core->>P: remove(ID)
         Core->>L: forget(ID), only once the VM is deleted
     end
@@ -144,40 +138,32 @@ stateDiagram-v2
     Ready --> [*]
 ```
 
-Nothing is closed for you. A failed VM keeps running, and the error names it, so you decide whether to fix it, close it or remove it. When the record itself fails, the error message is the only place the id appears.
+Nothing is closed for you. A failed VM keeps running and the error names it, so you decide whether to fix it, close it or remove it. When the record itself fails, the error message is the only place the id appears.
 
 ## What a failure leaves behind
 
-An error prints on an `error:` line, then one `caused by:` line per underlying cause. The last cause usually comes from the adapter:
-
-```console
-$ workspace boot dev --provider boat
-error: could not boot `dev`
-  caused by: the Boat environment `workspace` does not exist: `workspace onboard --provider boat` creates it
-```
-
-| Error | Meaning | What is left |
-| --- | --- | --- |
-| invalid name | The VM name is not a DNS label. | Nothing |
-| could not boot | The provider did not start a VM. | Nothing |
-| booted but could not record it | The record file could not be written. | A running VM with no record. The message holds its id. |
-| booted but could not reach it | The VM never answered. | A running, recorded VM |
-| profile failed | A profile's step failed. | A running, recorded VM, as the failed step left it |
-| not ready to boot VMs | Onboarding stopped. | The account as far as onboarding got. Run it again. |
-| could not close | The stop did not finish. | The VM may still run. The record stays. |
-| could not remove | The delete failed. | The VM may still exist. The record stays, so you can run `remove` again. |
-| removed but could not delete its record | The record file stayed. | No VM. Run `remove` again to delete the record. |
+| Failure | What is left |
+| --- | --- |
+| The VM name is invalid | Nothing |
+| The provider cannot start the VM | Nothing |
+| The record cannot be written | A running VM with no record. The error holds its id. |
+| The VM never answers | A running, recorded VM |
+| A profile fails | A running, recorded VM, as the failed step left it |
+| Onboarding stops | The account as far as onboarding got. Run it again. |
+| The stop does not finish | The VM may still run. The record stays. |
+| The delete fails | The VM may still exist. The record stays, so `remove` can run again. |
+| The VM is deleted but its record is not | No VM. Run `remove` again to delete the record. |
 
 ## Records
 
-`boot` writes one file per VM in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file is named after the VM id:
+`boot` writes one file per VM, named after the VM id, in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file names the provider and the VM name:
 
 ```
 provider=boat
 name=dev
 ```
 
-The file is written to a temporary name, then renamed, so it is never half written. To find a VM after an interrupted boot, list that directory.
+The file is written under a temporary name, then renamed, so it is never half written. After an interrupted boot, list that directory to find the VM.
 
 ```mermaid
 stateDiagram-v2
@@ -196,4 +182,4 @@ stateDiagram-v2
 - A failure after the id never stops or deletes the VM.
 - `close` keeps the record, since a stopped VM still exists.
 - `remove` deletes the record only after the provider confirms the VM is gone.
-- Closing a stopped or deleted VM succeeds, and so does removing a deleted one, so you can repeat any command.
+- Closing a stopped or deleted VM succeeds, and so does removing a deleted one, so every command can be repeated.

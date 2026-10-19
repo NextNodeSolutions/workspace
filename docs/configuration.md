@@ -1,6 +1,6 @@
 # Configuration
 
-Providers take options, such as the machine type. You set an option with a flag, in the config file, or not at all.
+Providers take options, such as a machine type. You set an option with a flag, in the config file, or not at all.
 
 ## Which value wins
 
@@ -25,29 +25,17 @@ A flag lasts for one command. The file holds what you want every time.
 
 The default file is optional. Without it, every option keeps its default.
 
-Each provider reads its own table under `[providers]`:
+Each provider reads its own table under `[providers]`, named after the provider:
 
 ```toml
 [providers.boat]
 type = "small"
-ttl = "8h"
-environment = "workspace"
 ```
 
-[Boat's page](providers/boat.md#options) lists its options, their flags and their defaults.
+Each provider's page lists its keys, and `workspace boot --help` lists the matching flags.
 
-## Mistakes are errors
+## Mistakes stop the command
 
-An unknown key, an unknown table or a bad value stops the command, and the error points at the line:
+An unknown key, an unknown table or a bad value is an error, and the error points at the line. So a typo never goes unnoticed.
 
-```console
-$ workspace boot dev --provider boat
-error: /home/you/.config/workspace/config.toml is not a valid config file
-  caused by: TOML parse error at line 2, column 1
-  |
-2 | typ = "large"
-  | ^^^
-unknown field `typ`, expected one of `type`, `ttl`, `environment`
-```
-
-Every command reads the file, `close` and `remove` included, so a broken file blocks them too until you fix it. A typo never goes unnoticed this way.
+Every command reads the file, `close` and `remove` included, because they build the provider the same way. A broken file therefore blocks them too until you fix it.
