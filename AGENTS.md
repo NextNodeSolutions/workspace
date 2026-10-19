@@ -23,18 +23,23 @@ The project is built as ports and adapters. `docs/architecture.md` shows the pie
 - **Provider details stay in the adapter.** The core holds what every provider needs, such as a VM name. Anything specific, such as size, lifetime, region or credentials, is an adapter option.
 - **Failures cross into the core as opaque causes.** An adapter turns each failure of its provider into its own error type, with a message that says what failed and what to do. The core wraps that error without inspecting or downcasting it. No provider type appears in a core signature, and nothing a provider prints reaches the terminal raw.
 - **Each adapter owns its options.** One struct per adapter gives both its flags and its config table, holds the defaults and validates the values. The precedence is always flag, then config file, then default. An unknown config key is an error.
-- **External calls are bounded.** A call that should answer quickly gets a time limit. Output read from another process gets a size limit. Only work that can rightly run long, such as a provisioning script, goes without a time limit, and its doc comment says so.
+- **External calls are bounded.** A call that should answer quickly gets a time limit. Output read from another process gets a size limit. Only work that can rightly run long, such as a provisioning script, goes without one.
 - **Decide on codes and state, never on wording.** When an external tool fails, branch on its error code, or read the state back. Messages change between versions, codes do not.
 
 ## Code rules
 
 - **Lints.** The workspace turns on pedantic clippy and forbids `unsafe`. Code passes with no warning. Silence a lint only with `#[expect(lint, reason = "...")]`, and give the real reason.
 - **Size.** `clippy.toml` caps function length and complexity. Keep each file under 250 lines and nesting at 2 levels or fewer. When a limit gets close, split by responsibility, not by line count.
-- **Literals.** Every number or string with meaning gets a named constant, and its doc comment says why it has that value.
+- **Literals.** Every number or string with meaning gets a named constant, whose name says what it is.
 - **Toolchain.** Stay within the `rust-version` of the workspace manifest.
 - **Errors.** Errors are `thiserror` types, local to the crate that raises them. A message says what failed and, when the user can act, what to do. An error that leaves something behind says so, for example that the VM is still running or that its record is kept.
 - **Panics.** Only for invariants the code itself guarantees, through an `expect` whose message states the invariant. Never for input, and never for another program's output.
-- **Comments** explain why, not what. A doc comment states the contract, with an `# Errors` section on public fallible functions.
+- **Comments.** Write none, so no comment can drift from the code. The exceptions are:
+  - one short sentence for a choice the code cannot show, such as an invariant, an order constraint, an outside requirement, or a workaround with its reason, unless an `AGENTS.md` or the docs already state it;
+  - the `# Errors` and `# Panics` sections that clippy requires on public functions;
+  - the clap help text, which users read in `--help`.
+
+  Everything else goes in names, in the docs or in the commit message.
 - **Tests.** Add them only when the task asks for them.
 - **Language.** Code, comments, commits and docs are in English.
 

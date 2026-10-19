@@ -1,6 +1,3 @@
-//! Owns a `boat` child process: feeds its stdin, collects what it prints,
-//! and kills it once its timeout passes.
-
 use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, ExitStatus, Output};
 use std::thread::{self, JoinHandle};
@@ -10,20 +7,15 @@ use crate::error::BoatError;
 
 const BYTES_PER_MIB: u64 = 1024 * 1024;
 
-/// Past this size, the rest of a stream is read and dropped, so a command
-/// that prints without end cannot fill the local memory.
 pub(crate) const MAX_OUTPUT_MIB: u64 = 64;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// What one stream printed, up to [`MAX_OUTPUT_MIB`].
 struct Captured {
     bytes: Vec<u8>,
     is_truncated: bool,
 }
 
-/// Feeds `stdin` to `child`, waits for it to exit and returns what it
-/// printed. With a `timeout`, kills it once the timeout passes.
 pub(crate) fn collect(
     subcommand: &'static str,
     mut child: Child,
@@ -38,8 +30,6 @@ pub(crate) fn collect(
     let stderr = child.stderr.take().expect("stderr is piped");
     let stdout = thread::spawn(move || capture(stdout));
     let stderr = thread::spawn(move || capture(stderr));
-    // After a kill, the readers are left behind: a pipe that a leftover
-    // process still holds open must not delay the error.
     let status = supervise(subcommand, &mut child, timeout)?;
     let stdout = join(stdout).map_err(BoatError::pipe(subcommand))?;
     let stderr = join(stderr).map_err(BoatError::pipe(subcommand))?;
@@ -56,8 +46,7 @@ pub(crate) fn collect(
     })
 }
 
-/// Kills `child` and reaps it. Both outcomes are dropped: the kill fails only
-/// when the child already exited, and the wait then reaps it all the same.
+/// Both outcomes are dropped: a kill fails only on an exited child, which the wait reaps anyway.
 pub(crate) fn kill(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -85,13 +74,11 @@ fn supervise(
     })
 }
 
-/// A command may exit before reading all of its stdin. The broken pipe that
-/// leaves is not a failure, so the outcome of the write is dropped.
+/// A command may exit before reading all its stdin, so a broken pipe here is not a failure.
 fn feed(mut input: ChildStdin, bytes: &[u8]) {
     let _ = input.write_all(bytes);
 }
 
-/// Keeps reading past the limit, so the command never blocks on a full pipe.
 fn capture(mut pipe: impl Read) -> io::Result<Captured> {
     let mut bytes = Vec::new();
     pipe.by_ref()

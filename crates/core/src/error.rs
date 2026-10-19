@@ -1,8 +1,6 @@
 use crate::VmId;
 use crate::vm::MAX_NAME_LENGTH;
 
-/// A failure reported by an adapter. The core attaches it to an [`Error`]
-/// without inspecting it, so no provider type leaks into the core.
 pub type Cause = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]

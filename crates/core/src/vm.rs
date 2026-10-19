@@ -5,8 +5,6 @@ use crate::Error;
 /// Longest DNS label, so every provider can use the name as a hostname.
 pub(crate) const MAX_NAME_LENGTH: usize = 63;
 
-/// What a provider needs to boot a VM. Provider-specific settings (size,
-/// region, image) belong to the adapter, not here.
 #[derive(Debug, Clone)]
 pub struct VmSpec {
     name: String,
@@ -41,7 +39,6 @@ fn is_dns_label(name: &str) -> bool {
     has_valid_length && has_valid_characters && !name.starts_with('-') && !name.ends_with('-')
 }
 
-/// The provider's handle on a VM: all a caller needs to reach or close it later.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmId(String);
 
