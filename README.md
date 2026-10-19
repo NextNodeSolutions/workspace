@@ -1,133 +1,68 @@
 # workspace
 
-`workspace` prepares a provider account once, then boots a VM on it, records it, and provisions it with profiles. Later it closes the VM, which stops it, or removes it for good. The core knows no provider and no profile. Both are adapters that the command line picks by name.
+`workspace` boots VMs on a cloud provider, sets them up with profiles, then stops or deletes them. It keeps a local record of every VM it boots, so a VM that runs and costs money is never forgotten.
 
-One provider exists, Boat. No profile exists yet, so `boot` brings up a bare VM.
+It supports one provider today, [Boat](docs/providers/boat.md). No profile exists yet, so `boot` brings up a bare VM.
 
-## Build
+## Quick start
 
 ```sh
 cargo build --release
 ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
+
+workspace onboard --provider boat     # once, to prepare your Boat account
+workspace boot dev --provider boat    # prints the VM id, such as bx_8x7wbxub
+workspace close bx_8x7wbxub           # stops the VM and keeps its disk
+workspace remove bx_8x7wbxub          # deletes the VM and its data for good
 ```
+
+## The big picture
+
+```mermaid
+stateDiagram-v2
+    state "Account not prepared" as Unprepared
+    state "Account prepared" as Prepared
+    state Prepared {
+        state "No VM" as NoVm
+        [*] --> NoVm
+        NoVm --> Running: workspace boot
+        Running --> Stopped: workspace close
+        Stopped --> Running: resumed on the provider
+        Running --> NoVm: workspace remove
+        Stopped --> NoVm: workspace remove
+    }
+    [*] --> Unprepared
+    Unprepared --> Prepared: workspace onboard
+```
+
+You onboard once per provider account. After that, each VM goes back and forth between running and stopped until you remove it. A stopped VM still exists and keeps its record. Only `remove` deletes the VM and its record.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `workspace onboard --provider <provider>` | Prepares the provider account for `boot`, then says what `boot` will do with the current options. Run it once, and again after you change them. It leaves what is already set up as it is. |
-| `workspace boot <name> --provider <provider> [--profile <profile>]...` | Boots a VM, records it, waits until it answers, applies each profile in order, then prints the VM id. |
-| `workspace close <id>` | Stops a VM that `boot` recorded, on the provider named in its record. The VM still exists and its record stays. |
-| `workspace remove <id>` | Deletes a recorded VM and its data for good, then deletes the record. |
+| `workspace onboard --provider <provider>` | Prepares the provider account, then prints what `boot` will do. Run it once, and again after you change options. It is safe to repeat. |
+| `workspace boot <name> --provider <provider> [--profile <profile>]...` | Boots a VM, records it, waits until it answers, applies each profile in order, then prints its id. |
+| `workspace close <id>` | Stops a recorded VM. Its disk and its record stay. |
+| `workspace remove <id>` | Deletes a recorded VM and its data for good, then its record. |
 
-`<name>` must be a DNS label of 1 to 63 lowercase letters, digits or hyphens, with no hyphen at either end.
+`<name>` is 1 to 63 lowercase letters, digits or hyphens, with no hyphen at either end. Every command takes `--config <path>` to read options from another file than the default one. Provider options, such as `--boat-type`, are listed by `workspace boot --help`.
 
-The profile registry is still empty:
+## Terms
 
-```console
-$ workspace boot dev --provider boat --profile pi
-error: unknown profile `pi`; available: none
-```
+| Term | Meaning |
+| --- | --- |
+| VM | A machine that `workspace` boots. Boat calls it a sandbox. |
+| Provider | Where VMs run, such as Boat. Each provider is its own crate. |
+| Profile | What a VM is for, such as an agent and its tools. A profile is applied after boot. Each profile is its own crate. |
+| Record | A small local file per VM. It names the provider, so that `close` and `remove` can find the VM later. |
+| Onboarding | Preparing the provider account once, before the first boot. |
 
-## Config
+## Documentation
 
-A provider option comes from the command line, else from the config file, else from the provider's default. The config file is `$XDG_CONFIG_HOME/workspace/config.toml`, or `~/.config/workspace/config.toml` when `XDG_CONFIG_HOME` is unset. Without it, every option keeps its default. `--config <path>` reads another file, which must exist.
-
-Each provider reads its own table:
-
-```toml
-[providers.boat]
-type = "small"
-ttl = "8h"
-environment = "workspace"
-```
-
-An unknown key or table is an error, so a typo cannot pass unnoticed. Every command reads the file, so a broken file also stops `close` and `remove` until you fix it.
-
-## Providers
-
-### Boat
-
-`--provider boat` needs the Boat CLI on PATH, signed in. `boat status` tells. Run `workspace onboard --provider boat` once before the first boot.
-
-| Flag | Key | Default | What it sets |
-| --- | --- | --- | --- |
-| `--boat-type` | `type` | `small` | The machine size: `small` (2 vCPU, 4 GB, half rate), `default` (4 vCPU, 8 GB), `large` (8 vCPU, 16 GB, twice the rate) or `xlarge` (16 vCPU, 32 GB, on the $100/month plan or higher). |
-| `--boat-ttl` | `ttl` | `8h` | How long after boot Boat stops the sandbox: a positive whole number followed by `d`, `h`, `m` or `s`, such as `90m`. |
-| `--boat-environment` | `environment` | `workspace` | The Boat environment the sandboxes start from: ASCII letters, digits, dots, dashes and underscores. |
-
-A Boat environment decides what a sandbox gets from the account. Boat's default one, `base`, can pass a sandbox your GitHub access, agent logins and secrets. Workspace uses its own instead, which gives a sandbox its own boat key and nothing else. That key is scoped to its own sandbox: the sandbox can stop itself, but cannot reach any other.
-
-- `onboard` checks that the Boat CLI is signed in and that the account can start the configured type. `xlarge`, for example, needs the $100/month plan. Then it creates the environment if it is missing, and resets its toggles if they differ. Boat records each change as a new version, which later sandboxes start from, while running ones keep theirs. `onboard` refuses to touch Boat's default environment, which other sandboxes start from.
-- `boot` checks the environment first. If it is missing, or no longer gives exactly the boat key, `boot` fails before it creates anything. Then it creates a sandbox of the configured type and TTL from that environment. When the TTL runs out, Boat stops the sandbox even mid-work, because its timer cannot tell when an agent goes idle.
-- `shell` runs scripts over `boat ssh`, stdin piped through. `boat exec` takes no stdin, and Boat keeps the command and output of every exec for 90 days, so the adapter does not use it. A script has no time limit, but it fails once its stdout or stderr passes 64 MiB.
-- `close` runs `boat stop` and waits until Boat has snapshotted the disk and stopped the sandbox. Boat keeps the disk of a stopped sandbox for 14 days, for free, and `boat resume <id>` brings it back meanwhile. On day 14 Boat erases the disk, and the sandbox can no longer resume.
-- `remove` runs `boat delete`, which erases the sandbox and all of its data.
-
-Every other `boat` call is killed after 60 s without an answer.
-
-## Records
-
-`boot` writes one file per VM in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file is named after the VM id and holds the provider and the name:
-
-```
-provider=boat
-name=dev
-```
-
-`boot` writes the record as soon as the provider returns the id, before it waits on the VM. If you interrupt a boot, the record is already on disk. List the directory to find the VM, then run `workspace close <id>` or `workspace remove <id>`.
-
-## Layout
-
-```
-crates/
-  core/               workspace-core: domain and ports, no IO, no adapter dependency
-    src/vm.rs         VmSpec with its validated name, VmId
-    src/port.rs       the Provider, Shell, Profile and Ledger traits
-    src/error.rs      Error for the core's failures, Cause for an adapter's
-    src/lifecycle.rs  onboard(), boot(), close() and remove()
-  cli/                the workspace binary: picks adapters by name and calls the core
-    src/main.rs       onboard, boot, close and remove commands
-    src/config.rs     the config file, and every provider's options
-    src/adapters.rs   provider and profile registries: boat, no profile yet
-    src/ledger.rs     FileLedger, the record files described above
-    src/xdg.rs        the XDG base directories
-  provider-boat/      workspace-provider-boat: Boat sandboxes through the boat CLI
-```
-
-This is a ports and adapters layout, the Rust version of hexagonal architecture. The core's `Cargo.toml` lists no adapter, so the compiler rejects any import of one.
-
-## Ports
-
-| Trait | Implemented by | Contract |
-| --- | --- | --- |
-| `Provider` | Boat, AWS, Cloudflare, a local hypervisor | `onboard` prepares the account and is safe to run again. `boot` returns the id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM and succeeds when it is already stopped or gone. `remove` deletes it for good and succeeds when it is already gone. |
-| `Shell` | the provider's transport, ssh or an API | `run(script, stdin)` returns stdout and fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
-| `Profile` | Pi with its skills, a cron setup | `provision(&dyn Shell)` must be safe to run twice. A profile sees only the shell, so it works the same on every provider. |
-| `Ledger` | `FileLedger` in the CLI | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. |
-
-Adapters report failures as a `Cause`, a boxed error that the core attaches to its own `Error` without reading it. No provider type reaches the core.
-
-## Adding an adapter
-
-1. Create `crates/provider-<name>` or `crates/profile-<name>`, depending on `workspace-core`, and implement the trait.
-2. Add the crate to `crates/cli/Cargo.toml`.
-3. Add one line to `PROVIDERS` or `PROFILES` in `crates/cli/src/adapters.rs`.
-4. For a provider with options, add its options struct to `Providers` in `crates/cli/src/config.rs`. It gives the provider its flags and its config table.
-
-The core does not change.
-
-## Guarantees
-
-- `boot` writes a VM's record as soon as its provider returns the id. One window remains, inside `Provider::boot`, between the provider allocating the VM and returning its id. Adapters must return as early as they can.
-- A failure after boot leaves the VM running, and the error names it. That covers recording, reaching the VM and provisioning. Nothing closes a VM automatically.
-- If recording itself fails, the error message is the only place the id appears.
-- `close` keeps the record, since a stopped VM still exists. `remove` keeps it when the provider fails, so you can run it again.
-
-## Development
-
-```sh
-cargo clippy --workspace --all-targets -- -D warnings
-```
-
-The workspace turns on `clippy::pedantic` and forbids `unsafe`. `clippy.toml` caps functions at 50 lines and cognitive complexity at 15. There are no tests yet.
+| Read | To learn |
+| --- | --- |
+| [Architecture](docs/architecture.md) | How the code is split, what each command does step by step, and what a failure leaves behind |
+| [Configuration](docs/configuration.md) | The config file, the flags, and which one wins |
+| [Boat](docs/providers/boat.md) | How VMs run on Boat, what a sandbox gets from your account, and every limit |
+| [Development](docs/development.md) | Checks, conventions, and how to add a provider or a profile |
