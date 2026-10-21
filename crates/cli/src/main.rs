@@ -128,8 +128,10 @@ fn setup(
     };
     let provider = adapters::provider(&name, options.or(file.providers))?;
     let summary = lifecycle::setup(provider.as_ref())?;
-    let path = config::remember_provider(config_path, &name)?;
+    // Printed first, so that a config file that cannot be written still
+    // leaves on screen what setup changed on the account.
     println!("{summary}");
+    let path = config::remember_provider(config_path, &name)?;
     println!(
         "Commands run on {name} unless --provider names another, as {} sets.",
         path.display()

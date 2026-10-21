@@ -12,7 +12,6 @@ const CONFIG_FILE: &str = "workspace/config.toml";
 const DEFAULT_CONFIG_HOME: &str = ".config";
 
 const PROVIDER_KEY: &str = "provider";
-const STAGING_SUFFIX: &str = ".tmp";
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,18 +117,13 @@ fn read(path: &Path, is_required: bool) -> Result<Option<String>, ConfigError> {
     }
 }
 
-/// Writes through a symbolic link rather than over it, so a config file
-/// that a dotfile manager links into place stays linked.
+/// Writes in place, so the file keeps its permissions, and a symbolic link,
+/// such as a dotfile manager sets up, stays a link to the file it names.
 fn write(path: &Path, text: &str) -> Result<(), ConfigError> {
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-    let mut staging = target.clone().into_os_string();
-    staging.push(STAGING_SUFFIX);
-    let staging = PathBuf::from(staging);
-    if let Some(directory) = target.parent() {
+    if let Some(directory) = path.parent() {
         fs::create_dir_all(directory).map_err(io_error("create", directory))?;
     }
-    fs::write(&staging, text).map_err(io_error("write", &staging))?;
-    fs::rename(&staging, &target).map_err(io_error("write", &target))
+    fs::write(path, text).map_err(io_error("write", path))
 }
 
 fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> ConfigError {
