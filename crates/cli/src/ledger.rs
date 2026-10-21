@@ -4,6 +4,7 @@ use std::{fs, io};
 use workspace_core::port::Ledger;
 use workspace_core::{Cause, VmId, VmSpec};
 
+use crate::files::{self, FileError};
 use crate::xdg;
 
 const RECORDS_DIRECTORY: &str = "workspace/vms";
@@ -41,13 +42,8 @@ pub enum LedgerError {
     Ambiguous { name: String, ids: String },
     #[error("{} has no `{field}` line", path.display())]
     Incomplete { path: PathBuf, field: &'static str },
-    #[error("cannot {action} {}", path.display())]
-    Io {
-        action: &'static str,
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
+    #[error(transparent)]
+    Io(#[from] FileError),
 }
 
 impl FileLedger {
@@ -69,9 +65,9 @@ impl Ledger for FileLedger {
             self.provider,
             spec.name()
         );
-        fs::create_dir_all(&self.directory).map_err(io_error("create", &self.directory))?;
-        fs::write(&staging, record).map_err(io_error("write", &staging))?;
-        fs::rename(&staging, &path).map_err(io_error("write", &path))?;
+        fs::create_dir_all(&self.directory).map_err(files::io_error("create", &self.directory))?;
+        fs::write(&staging, record).map_err(files::io_error("write", &staging))?;
+        fs::rename(&staging, &path).map_err(files::io_error("write", &path))?;
         Ok(())
     }
 
@@ -79,7 +75,7 @@ impl Ledger for FileLedger {
         let path = record_path(&self.directory, vm)?;
         match fs::remove_file(&path) {
             Err(error) if error.kind() != io::ErrorKind::NotFound => {
-                Err(io_error("remove", &path)(error).into())
+                Err(files::io_error("remove", &path)(error).into())
             }
             _ => Ok(()),
         }
@@ -91,11 +87,13 @@ pub fn records() -> Result<Vec<Record>, LedgerError> {
     let directory = records_directory()?;
     let entries = match fs::read_dir(&directory) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        entries => entries.map_err(io_error("read", &directory))?,
+        entries => entries.map_err(files::io_error("read", &directory))?,
     };
     let mut records = Vec::new();
     for entry in entries {
-        let file_name = entry.map_err(io_error("read", &directory))?.file_name();
+        let file_name = entry
+            .map_err(files::io_error("read", &directory))?
+            .file_name();
         let id = file_name.to_string_lossy();
         if !id.starts_with(HIDDEN_PREFIX) {
             records.extend(read_record(&directory, &VmId::from(id.into_owned()))?);
@@ -151,9 +149,8 @@ fn record_path(directory: &Path, vm: &VmId) -> Result<PathBuf, LedgerError> {
 /// The record of `vm`, or `None` when it has none.
 fn read_record(directory: &Path, vm: &VmId) -> Result<Option<Record>, LedgerError> {
     let path = record_path(directory, vm)?;
-    let text = match fs::read_to_string(&path) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        text => text.map_err(io_error("read", &path))?,
+    let Some(text) = files::read_if_exists(&path)? else {
+        return Ok(None);
     };
     let field = |field: &'static str| {
         let value = text.lines().find_map(|line| line.strip_prefix(field));
@@ -169,13 +166,4 @@ fn read_record(directory: &Path, vm: &VmId) -> Result<Option<Record>, LedgerErro
         provider: field(PROVIDER_FIELD)?,
         name: field(NAME_FIELD)?,
     }))
-}
-
-fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> LedgerError {
-    let path = path.to_owned();
-    move |source| LedgerError::Io {
-        action,
-        path,
-        source,
-    }
 }

@@ -1,5 +1,6 @@
 mod adapters;
 mod config;
+mod files;
 mod ledger;
 mod xdg;
 

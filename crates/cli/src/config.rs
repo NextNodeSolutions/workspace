@@ -1,11 +1,12 @@
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{fs, io};
 
 use clap::Args;
 use serde::Deserialize;
 use toml_edit::DocumentMut;
 use workspace_provider_boat as boat;
 
+use crate::files::{self, FileError};
 use crate::xdg;
 
 const CONFIG_FILE: &str = "workspace/config.toml";
@@ -42,13 +43,8 @@ impl Providers {
 pub enum ConfigError {
     #[error("cannot locate the config directory: set XDG_CONFIG_HOME or HOME")]
     NoConfigDirectory,
-    #[error("cannot {action} {}", path.display())]
-    Io {
-        action: &'static str,
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
+    #[error(transparent)]
+    Io(#[from] FileError),
     #[error("{} is not a valid config file", path.display())]
     Invalid {
         path: PathBuf,
@@ -110,27 +106,20 @@ fn default_path() -> Option<PathBuf> {
 
 /// The text of the file at `path`, or `None` when it is missing and not
 /// required.
-fn read(path: &Path, is_required: bool) -> Result<Option<String>, ConfigError> {
-    match fs::read_to_string(path) {
-        Err(error) if !is_required && error.kind() == io::ErrorKind::NotFound => Ok(None),
-        text => text.map(Some).map_err(io_error("read", path)),
+fn read(path: &Path, is_required: bool) -> Result<Option<String>, FileError> {
+    if is_required {
+        return fs::read_to_string(path)
+            .map(Some)
+            .map_err(files::io_error("read", path));
     }
+    files::read_if_exists(path)
 }
 
 /// Writes in place, so the file keeps its permissions, and a symbolic link,
 /// such as a dotfile manager sets up, stays a link to the file it names.
-fn write(path: &Path, text: &str) -> Result<(), ConfigError> {
+fn write(path: &Path, text: &str) -> Result<(), FileError> {
     if let Some(directory) = path.parent() {
-        fs::create_dir_all(directory).map_err(io_error("create", directory))?;
+        fs::create_dir_all(directory).map_err(files::io_error("create", directory))?;
     }
-    fs::write(path, text).map_err(io_error("write", path))
-}
-
-fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> ConfigError {
-    let path = path.to_owned();
-    move |source| ConfigError::Io {
-        action,
-        path,
-        source,
-    }
+    fs::write(path, text).map_err(files::io_error("write", path))
 }
