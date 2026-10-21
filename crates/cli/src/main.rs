@@ -11,7 +11,10 @@ use adapters::NoProvider;
 use clap::{Args, Parser, Subcommand};
 use config::{Config, Providers};
 use ledger::FileLedger;
-use workspace_core::{VmId, VmSpec, lifecycle};
+use workspace_core::{VmSpec, lifecycle};
+
+/// Separates the columns that `list` prints.
+const COLUMN_GAP: &str = "  ";
 
 #[derive(Parser)]
 #[command(about = "Start, stop and remove VMs on any provider")]
@@ -43,9 +46,18 @@ enum Command {
         provider: ProviderArgs,
     },
     /// Stop a recorded VM on the provider that created it; it stays recorded
-    Stop { id: String },
+    Stop {
+        /// The VM's name, or its id
+        vm: String,
+    },
     /// Delete a recorded VM and its data for good, then its record
-    Remove { id: String },
+    Remove {
+        /// The VM's name, or its id
+        vm: String,
+    },
+    /// Print each recorded VM: its name, its id and its provider
+    #[command(visible_alias = "ls")]
+    List,
 }
 
 #[derive(Args)]
@@ -77,8 +89,9 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
             profiles,
             provider,
         } => start(&name, provider, file, &profiles),
-        Command::Stop { id } => stop(&VmId::from(id), file.providers),
-        Command::Remove { id } => remove(&VmId::from(id), file.providers),
+        Command::Stop { vm } => stop(&vm, file.providers),
+        Command::Remove { vm } => remove(&vm, file.providers),
+        Command::List => list(),
     }
 }
 
@@ -114,6 +127,7 @@ fn start(
     let ProviderArgs { provider, options } = args;
     let provider_name = provider.or(file.provider).ok_or(NoProvider::NotSetUp)?;
     let spec = VmSpec::new(name)?;
+    ledger::ensure_free(spec.name())?;
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
     let profiles = profile_names
         .iter()
@@ -125,17 +139,34 @@ fn start(
     Ok(())
 }
 
-fn stop(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
-    let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider(), file)?;
-    lifecycle::stop(provider.as_ref(), vm)?;
+fn stop(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
+    let record = ledger::find(vm)?;
+    let provider = adapters::provider(&record.provider, file)?;
+    lifecycle::stop(provider.as_ref(), &record.id)?;
     Ok(())
 }
 
-fn remove(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
-    let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider(), file)?;
-    lifecycle::remove(provider.as_ref(), &ledger, vm)?;
+fn remove(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
+    let record = ledger::find(vm)?;
+    let provider = adapters::provider(&record.provider, file)?;
+    let ledger = FileLedger::for_provider(&record.provider)?;
+    lifecycle::remove(provider.as_ref(), &ledger, &record.id)?;
+    Ok(())
+}
+
+/// One line per VM, in aligned columns.
+fn list() -> Result<(), Box<dyn Error>> {
+    let records = ledger::records()?;
+    let name_width = records.iter().map(|record| record.name.len()).max();
+    let id_width = records.iter().map(|record| record.id.as_str().len()).max();
+    let (name_width, id_width) = (name_width.unwrap_or(0), id_width.unwrap_or(0));
+    for record in &records {
+        let (name, id) = (&record.name, record.id.as_str());
+        println!(
+            "{name:name_width$}{COLUMN_GAP}{id:id_width$}{COLUMN_GAP}{}",
+            record.provider
+        );
+    }
     Ok(())
 }
 

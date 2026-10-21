@@ -99,9 +99,9 @@ sequenceDiagram
     participant L as Ledger
     participant Core as core
     participant P as Provider
-    You->>CLI: workspace stop ID, or workspace remove ID
-    CLI->>L: find(ID)
-    L-->>CLI: the provider named in the record
+    You->>CLI: workspace stop VM, or workspace remove VM
+    CLI->>L: find the record whose id or else name is VM
+    L-->>CLI: the VM id and its provider
     CLI->>CLI: build that provider
     alt stop
         CLI->>Core: stop
@@ -148,6 +148,7 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 | Failure | What is left |
 | --- | --- |
 | The VM name is invalid | Nothing |
+| The VM name is already recorded | Nothing |
 | The provider cannot start the VM | Nothing |
 | The record cannot be written | A running VM with no record. The error holds its id. |
 | The VM never answers | A running, recorded VM |
@@ -166,7 +167,9 @@ provider=boat
 name=dev
 ```
 
-The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, list that directory to find the VM.
+The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, `workspace list` shows the VM.
+
+Since the record holds the name, `stop` and `remove` take the name in place of the id. A name means one VM: `start` refuses a name that is already recorded, before it creates anything. If older records share a name, a command given that name fails and lists their ids, so you pick one.
 
 ```mermaid
 stateDiagram-v2

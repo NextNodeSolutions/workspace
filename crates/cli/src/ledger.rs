@@ -11,9 +11,20 @@ const DEFAULT_DATA_HOME: &str = ".local/share";
 const PROVIDER_FIELD: &str = "provider=";
 const NAME_FIELD: &str = "name=";
 
+/// Starts the name of a file that is not a record, such as one being
+/// written. A record never starts with it, since its id cannot.
+const HIDDEN_PREFIX: char = '.';
+
 pub struct FileLedger {
     directory: PathBuf,
     provider: String,
+}
+
+/// A VM as its record describes it.
+pub struct Record {
+    pub id: VmId,
+    pub provider: String,
+    pub name: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -22,10 +33,16 @@ pub enum LedgerError {
     NoDataDirectory,
     #[error("vm id `{0}` cannot name a record file")]
     UnsafeId(VmId),
-    #[error("no record of {0}: only VMs that `workspace start` recorded can be stopped or removed")]
-    Unknown(VmId),
-    #[error("{} names no provider", .0.display())]
-    NoProvider(PathBuf),
+    #[error("no VM is recorded as `{0}`: `workspace list` shows the recorded VMs")]
+    Unknown(String),
+    #[error("several VMs are named `{name}`, so name one by its id: {ids}")]
+    Ambiguous { name: String, ids: String },
+    #[error(
+        "a VM named `{name}` is already recorded, as {id}: stop or remove it, or pick another name"
+    )]
+    Taken { name: String, id: VmId },
+    #[error("{} has no `{field}` line", path.display())]
+    Incomplete { path: PathBuf, field: &'static str },
     #[error("cannot {action} {}", path.display())]
     Io {
         action: &'static str,
@@ -42,31 +59,13 @@ impl FileLedger {
             provider: provider.to_owned(),
         })
     }
-
-    pub fn find(vm: &VmId) -> Result<Self, LedgerError> {
-        let directory = records_directory()?;
-        let path = record_path(&directory, vm)?;
-        let record = read_record(&path, vm)?;
-        let provider = record
-            .lines()
-            .find_map(|line| line.strip_prefix(PROVIDER_FIELD))
-            .ok_or_else(|| LedgerError::NoProvider(path.clone()))?;
-        Ok(Self {
-            directory,
-            provider: provider.to_owned(),
-        })
-    }
-
-    pub fn provider(&self) -> &str {
-        &self.provider
-    }
 }
 
 impl Ledger for FileLedger {
     fn record(&self, vm: &VmId, spec: &VmSpec) -> Result<(), Cause> {
         let path = record_path(&self.directory, vm)?;
         // A leading dot never collides with a record: record names cannot start with one.
-        let staging = self.directory.join(format!(".{vm}.tmp"));
+        let staging = self.directory.join(format!("{HIDDEN_PREFIX}{vm}.tmp"));
         let record = format!(
             "{PROVIDER_FIELD}{}\n{NAME_FIELD}{}\n",
             self.provider,
@@ -89,6 +88,64 @@ impl Ledger for FileLedger {
     }
 }
 
+/// Every record, sorted by name, then by id.
+pub fn records() -> Result<Vec<Record>, LedgerError> {
+    let directory = records_directory()?;
+    let entries = match fs::read_dir(&directory) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        entries => entries.map_err(io_error("read", &directory))?,
+    };
+    let mut records = Vec::new();
+    for entry in entries {
+        let file_name = entry.map_err(io_error("read", &directory))?.file_name();
+        let id = file_name.to_string_lossy();
+        if !id.starts_with(HIDDEN_PREFIX) {
+            records.extend(read_record(&directory, &VmId::from(id.into_owned()))?);
+        }
+    }
+    records.sort_by(|left, right| {
+        (&left.name, left.id.as_str()).cmp(&(&right.name, right.id.as_str()))
+    });
+    Ok(records)
+}
+
+/// The record of the VM that `handle` names: its id, or else its name.
+pub fn find(handle: &str) -> Result<Record, LedgerError> {
+    let directory = records_directory()?;
+    if let Some(record) = read_record(&directory, &VmId::from(handle.to_owned()))? {
+        return Ok(record);
+    }
+    named(handle)?.ok_or_else(|| LedgerError::Unknown(handle.to_owned()))
+}
+
+/// The record of the VM named `name`, when one is recorded.
+pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
+    let mut matches: Vec<Record> = records()?
+        .into_iter()
+        .filter(|record| record.name == name)
+        .collect();
+    if matches.len() > 1 {
+        let ids: Vec<&str> = matches.iter().map(|record| record.id.as_str()).collect();
+        return Err(LedgerError::Ambiguous {
+            name: name.to_owned(),
+            ids: ids.join(", "),
+        });
+    }
+    Ok(matches.pop())
+}
+
+/// Fails when a VM named `name` is already recorded, so that one name
+/// always means one VM.
+pub fn ensure_free(name: &str) -> Result<(), LedgerError> {
+    match named(name)? {
+        Some(record) => Err(LedgerError::Taken {
+            name: record.name,
+            id: record.id,
+        }),
+        None => Ok(()),
+    }
+}
+
 fn records_directory() -> Result<PathBuf, LedgerError> {
     let data_home = xdg::base_directory("XDG_DATA_HOME", DEFAULT_DATA_HOME)
         .ok_or(LedgerError::NoDataDirectory)?;
@@ -97,18 +154,35 @@ fn records_directory() -> Result<PathBuf, LedgerError> {
 
 fn record_path(directory: &Path, vm: &VmId) -> Result<PathBuf, LedgerError> {
     let id = vm.as_str();
-    let is_file_name = !id.is_empty() && !id.starts_with('.') && !id.contains(['/', '\\', '\0']);
+    let is_file_name =
+        !id.is_empty() && !id.starts_with(HIDDEN_PREFIX) && !id.contains(['/', '\\', '\0']);
     if !is_file_name {
         return Err(LedgerError::UnsafeId(vm.clone()));
     }
     Ok(directory.join(id))
 }
 
-fn read_record(path: &Path, vm: &VmId) -> Result<String, LedgerError> {
-    fs::read_to_string(path).map_err(|source| match source.kind() {
-        io::ErrorKind::NotFound => LedgerError::Unknown(vm.clone()),
-        _ => io_error("read", path)(source),
-    })
+/// The record of `vm`, or `None` when it has none.
+fn read_record(directory: &Path, vm: &VmId) -> Result<Option<Record>, LedgerError> {
+    let path = record_path(directory, vm)?;
+    let text = match fs::read_to_string(&path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        text => text.map_err(io_error("read", &path))?,
+    };
+    let field = |field: &'static str| {
+        let value = text.lines().find_map(|line| line.strip_prefix(field));
+        value
+            .map(str::to_owned)
+            .ok_or_else(|| LedgerError::Incomplete {
+                path: path.clone(),
+                field,
+            })
+    };
+    Ok(Some(Record {
+        id: vm.clone(),
+        provider: field(PROVIDER_FIELD)?,
+        name: field(NAME_FIELD)?,
+    }))
 }
 
 fn io_error(action: &'static str, path: &Path) -> impl FnOnce(io::Error) -> LedgerError {
