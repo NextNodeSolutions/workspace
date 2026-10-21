@@ -7,7 +7,7 @@ use workspace_core::{VmId, VmSpec, lifecycle};
 use crate::ProviderArgs;
 use crate::adapters;
 use crate::config::{self, Config, Providers};
-use crate::ledger::{self, FileLedger, Record};
+use crate::ledger::{self, FileLedger, Record, Records};
 
 const COLUMN_GAP: &str = "  ";
 
@@ -18,6 +18,12 @@ struct NoTerminal;
 #[derive(Debug, thiserror::Error)]
 #[error("no provider chosen: run `workspace setup`, or pass --provider")]
 struct NotSetUp;
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "the records above cannot be read, so their VMs may run unlisted: fix or delete each file once its VM is gone"
+)]
+struct UnreadableRecords;
 
 #[derive(Debug, thiserror::Error)]
 #[error("`{name}` runs on {recorded}, not {asked}: drop --provider, or pick another name")]
@@ -119,16 +125,23 @@ pub fn remove(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn list() -> Result<(), Box<dyn Error>> {
-    let records = ledger::records()?;
-    let name_width = records.iter().map(|record| record.name.len()).max();
-    let id_width = records.iter().map(|record| record.id.as_str().len()).max();
+    let Records { found, unreadable } = ledger::records()?;
+    let name_width = found.iter().map(|record| record.name.len()).max();
+    let id_width = found.iter().map(|record| record.id.as_str().len()).max();
     let (name_width, id_width) = (name_width.unwrap_or(0), id_width.unwrap_or(0));
-    for record in &records {
+    for record in &found {
         let (name, id) = (&record.name, record.id.as_str());
         println!(
             "{name:name_width$}{COLUMN_GAP}{id:id_width$}{COLUMN_GAP}{}",
             record.provider
         );
     }
-    Ok(())
+    for error in &unreadable {
+        crate::report(error);
+    }
+    if unreadable.is_empty() {
+        Ok(())
+    } else {
+        Err(UnreadableRecords.into())
+    }
 }

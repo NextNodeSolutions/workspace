@@ -194,6 +194,8 @@ name=dev
 
 The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, `workspace list` shows the VM.
 
+A file that cannot be read, say after a hand edit, never hides the others. `list` prints every VM it can read, then names each file it cannot and fails, so a script notices. Until that file is fixed or deleted, a name that no readable record holds cannot be looked up, since the unreadable file might hold it, and `start` would create a second VM. A name that a readable record holds works as usual.
+
 Since the record holds the name, `stop` and `remove` take the name in place of the id. A name means one VM: when a name is recorded, `start` resumes that VM rather than create another. If older records share a name, a command given that name fails and lists their ids, so you pick one.
 
 ```mermaid

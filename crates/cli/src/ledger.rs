@@ -34,6 +34,12 @@ pub struct Record {
     pub name: String,
 }
 
+#[derive(Default)]
+pub struct Records {
+    pub found: Vec<Record>,
+    pub unreadable: Vec<LedgerError>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerError {
     #[error("cannot locate the data directory: set XDG_DATA_HOME or HOME")]
@@ -46,6 +52,10 @@ pub enum LedgerError {
         "several VMs are named `{name}`: {ids}. `stop` and `remove` take an id, so remove all but one"
     )]
     Ambiguous { name: String, ids: String },
+    #[error(
+        "cannot tell whether a VM is named `{name}`, since some records cannot be read: `workspace list` names them"
+    )]
+    Undecidable { name: String },
     #[error("{} has no `{field}` line", path.display())]
     Incomplete { path: PathBuf, field: &'static str },
     #[error(transparent)]
@@ -107,23 +117,27 @@ pub fn lock_name(name: &str, on_wait: impl FnOnce()) -> Result<NameLock, LedgerE
     Ok(NameLock { _file: file })
 }
 
-pub fn records() -> Result<Vec<Record>, LedgerError> {
+pub fn records() -> Result<Records, LedgerError> {
     let directory = records_directory()?;
     let entries = match fs::read_dir(&directory) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Records::default()),
         entries => entries.map_err(files::io_error("read", &directory))?,
     };
-    let mut records = Vec::new();
+    let mut records = Records::default();
     for entry in entries {
         let file_name = entry
             .map_err(files::io_error("read", &directory))?
             .file_name();
         let id = file_name.to_string_lossy();
-        if !id.starts_with(HIDDEN_PREFIX) {
-            records.extend(read_record(&directory, &VmId::from(id.into_owned()))?);
+        if id.starts_with(HIDDEN_PREFIX) {
+            continue;
+        }
+        match read_record(&directory, &VmId::from(id.into_owned())) {
+            Ok(record) => records.found.extend(record),
+            Err(error) => records.unreadable.push(error),
         }
     }
-    records.sort_by(|left, right| {
+    records.found.sort_by(|left, right| {
         (&left.name, left.id.as_str()).cmp(&(&right.name, right.id.as_str()))
     });
     Ok(records)
@@ -138,7 +152,8 @@ pub fn find(handle: &str) -> Result<Record, LedgerError> {
 }
 
 pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
-    let mut matches: Vec<Record> = records()?
+    let Records { found, unreadable } = records()?;
+    let mut matches: Vec<Record> = found
         .into_iter()
         .filter(|record| record.name == name)
         .collect();
@@ -147,6 +162,11 @@ pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
         return Err(LedgerError::Ambiguous {
             name: name.to_owned(),
             ids: ids.join(", "),
+        });
+    }
+    if matches.is_empty() && !unreadable.is_empty() {
+        return Err(LedgerError::Undecidable {
+            name: name.to_owned(),
         });
     }
     Ok(matches.pop())
