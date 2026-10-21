@@ -12,10 +12,10 @@ On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapt
 | Flag | Config key | What it sets |
 | --- | --- | --- |
 | `--boat-type` | `type` | The machine size. It defaults to the smallest. A larger one is a choice you make here. |
-| `--boat-ttl` | `ttl` | How long after boot Boat stops the sandbox, such as `90m` or `8h` |
+| `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h` |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
 
-`workspace boot --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type.
+`workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type.
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
@@ -36,7 +36,7 @@ The boat key reaches only its own sandbox, so the sandbox can stop itself and no
 stateDiagram-v2
     state "Missing" as Missing
     state "Everything injected" as Full
-    state "Set up, boot allowed" as Ready
+    state "Set up, start allowed" as Ready
     state "Changed by hand" as Changed
 
     [*] --> Missing
@@ -48,7 +48,7 @@ stateDiagram-v2
     Ready --> Missing: boat env rm
 ```
 
-- `boot` works only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
+- `start` creates a sandbox only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
 - Each change creates a new version of the environment. New sandboxes start from the latest one, and running ones keep theirs.
 - `setup` never touches the account's default environment, since your other sandboxes start from it.
 
@@ -62,7 +62,7 @@ stateDiagram-v2
     [*] --> Starting: boat new
     Starting --> Up: ready
     Starting --> Other: Boat fails
-    Up --> Stopping: close, or the TTL runs out
+    Up --> Stopping: stop, or the TTL runs out
     Stopping --> Stopped: disk snapshotted
     Stopped --> Starting: boat resume
     Up --> Gone: remove
@@ -105,9 +105,9 @@ sequenceDiagram
     Note over A,B: stops unless the sandbox would get only its boat key
 ```
 
-It then prints what `boot` will use, and whether it created, reset or kept the environment.
+It then prints what `start` will use, and whether it created, reset or kept the environment.
 
-### `boot`
+### `create`
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +115,7 @@ sequenceDiagram
     participant Core as core
     participant A as Boat adapter
     participant B as boat CLI
-    Core->>A: boot
+    Core->>A: create
     A->>B: boat env list
     Note over A,B: stops unless the environment is set up
     A->>B: boat new, with the type, the TTL and the environment
@@ -158,7 +158,7 @@ sequenceDiagram
 - **No time limit.** Provisioning can take long, so a script runs until it ends. Its output has a size limit instead.
 - **Telling failures apart.** `boat ssh` exits the same way whether the script failed or Boat refused. Boat's last line tells which, and the adapter reads it.
 
-### `close`
+### `stop`
 
 ```mermaid
 sequenceDiagram
@@ -166,7 +166,7 @@ sequenceDiagram
     participant Core as core
     participant A as Boat adapter
     participant B as boat CLI
-    Core->>A: close(ID)
+    Core->>A: stop(ID)
     A->>B: boat stop
     alt Boat gave no answer
         A-->>Core: error, at once
@@ -219,7 +219,7 @@ stateDiagram-v2
 ```
 
 - **Time limit.** A call that only talks to the Boat API gets one, since it should answer within seconds. `boat ssh` gets none.
-- **Refused** means the Boat API said no, and its code drives decisions. For example, a not-found code means the sandbox is gone, which `close` and `remove` treat as success.
+- **Refused** means the Boat API said no, and its code drives decisions. For example, a not-found code means the sandbox is gone, which `stop` and `remove` treat as success.
 - **Failed** carries the message from boat's last line, or its stderr when there is no such line.
 - **Stalled.** After a kill, the threads reading the pipes are left behind, so a leftover child process that holds a pipe open cannot delay the error.
 - **Too much output.** Past the limit, the rest of a stream is read and dropped, so the command never blocks on a full pipe.

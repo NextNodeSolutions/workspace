@@ -13,15 +13,15 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 
 ## Sandbox lifecycle
 
-- **Return the id first.** `boot` returns the id from the first line of `boat new` that carries one, and lets `boat new` finish in the background. Never wait for readiness inside `boot`: nothing records the sandbox until the id comes back.
+- **Return the id first.** `create` returns the id from the first line of `boat new` that carries one, and lets `boat new` finish in the background. Never wait for readiness inside `create`: nothing records the sandbox until the id comes back.
 - **Fold states, never panic on them.** Boat's state names map onto the adapter's few states. A name the adapter does not know falls into the error-or-unknown state, and operations treat that state as a failure.
-- **Stop and delete can be repeated.** Boat refuses to stop a sandbox that is already stopped or gone, so `close` reads the state after `boat stop`, and that refusal counts as success. `remove` treats not found as success.
+- **Stop and delete can be repeated.** Boat refuses to stop a sandbox that is already stopped or gone, so `stop` reads the state after `boat stop`, and that refusal counts as success. `remove` treats not found as success.
 - **Scripts go over ssh, as one argument.** `boat exec` takes no stdin, and Boat stores the command and output of every exec, so secrets could end up stored there. `boat ssh` quotes each argument for the remote shell, so the script travels as a single argument to bash. `boat ssh` exits the same way for a failed script and for a refused request, and the code on its last line tells them apart.
 
 ## Account and environment
 
 - **Least privilege.** Sandboxes start from workspace's own environment, which passes only the sandbox's own boat key. A sandbox needs that key to stop itself, and the key reaches nothing else. Do not turn on GitHub access, secrets or agent logins there. A profile that needs a credential passes it on stdin.
-- **Check before booting.** `boot` reads the environment's effective toggles, and refuses to create a sandbox unless they match exactly. A hand edit to the environment therefore cannot give sandboxes more than intended.
+- **Check before creating.** `create` reads the environment's effective toggles, and refuses to create a sandbox unless they match exactly. A hand edit to the environment therefore cannot give sandboxes more than intended.
 - **Setup owns only its environment.** It creates the environment when it is missing, and sets the toggles only when they differ, since each change creates a version. Then it reads the result back. It never touches the account's default environment.
 
 ## Options
@@ -31,5 +31,5 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 
 ## Testing against Boat
 
-- Booting creates a sandbox that costs money, and setup changes the account. Get the user's go-ahead first, and delete what you created.
+- Creating a sandbox costs money, and setup changes the account. Get the user's go-ahead first, and delete what you created.
 - To test behavior, put a fake `boat` on `PATH` that prints recorded JSON.

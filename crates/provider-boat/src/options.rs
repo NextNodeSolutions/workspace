@@ -30,7 +30,7 @@ pub struct Options {
     #[serde(rename = "type")]
     machine_type: Option<MachineType>,
 
-    /// How long after boot Boat stops the sandbox, even mid-work, such as
+    /// How long after it starts Boat stops the sandbox, even mid-work, such as
     /// 8h or 90m [default: 8h]
     #[arg(long = "boat-ttl", value_name = "DURATION")]
     ttl: Option<Ttl>,

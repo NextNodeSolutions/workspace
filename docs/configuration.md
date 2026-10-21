@@ -32,11 +32,11 @@ Each provider reads its own table under `[providers]`, named after the provider:
 type = "small"
 ```
 
-Each provider's page lists its keys, and `workspace boot --help` lists the matching flags.
+Each provider's page lists its keys, and `workspace start --help` lists the matching flags.
 
 ## The default provider
 
-`setup` and `boot` run on the provider that `--provider` names, or else on the one that the `provider` key names at the top of the file:
+`setup` and `start` run on the provider that `--provider` names, or else on the one that the `provider` key names at the top of the file:
 
 ```toml
 provider = "boat"
@@ -45,10 +45,10 @@ provider = "boat"
 type = "small"
 ```
 
-`workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `boot` asks you to run `setup`. `close` and `remove` need neither, since a VM's record names the provider that booted it.
+`workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `start` asks you to run `setup`. `stop` and `remove` need neither, since a VM's record names the provider that created it.
 
 ## Mistakes stop the command
 
 An unknown key, an unknown table or a bad value is an error, and the error points at the line. So a typo never goes unnoticed.
 
-Every command reads the file, `close` and `remove` included, because they build the provider the same way. A broken file therefore blocks them too until you fix it.
+Every command reads the file, `stop` and `remove` included, because they build the provider the same way. A broken file therefore blocks them too until you fix it.

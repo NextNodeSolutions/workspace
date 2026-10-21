@@ -3,13 +3,13 @@ use crate::{Cause, VmId, VmSpec};
 pub trait Provider {
     /// # Errors
     ///
-    /// When the account is not ready for `boot`.
+    /// When the account is not ready for `create`.
     fn setup(&self) -> Result<String, Cause>;
 
     /// # Errors
     ///
     /// When no VM was started.
-    fn boot(&self, spec: &VmSpec) -> Result<VmId, Cause>;
+    fn create(&self, spec: &VmSpec) -> Result<VmId, Cause>;
 
     /// # Errors
     ///
@@ -19,7 +19,7 @@ pub trait Provider {
     /// # Errors
     ///
     /// When the VM may still be running.
-    fn close(&self, vm: &VmId) -> Result<(), Cause>;
+    fn stop(&self, vm: &VmId) -> Result<(), Cause>;
 
     /// # Errors
     ///

@@ -14,7 +14,7 @@ use ledger::FileLedger;
 use workspace_core::{VmId, VmSpec, lifecycle};
 
 #[derive(Parser)]
-#[command(about = "Boot, close and remove VMs on any provider")]
+#[command(about = "Start, stop and remove VMs on any provider")]
 struct Cli {
     /// Read options from this file [default: ~/.config/workspace/config.toml]
     #[arg(long, global = true, value_name = "PATH")]
@@ -26,14 +26,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Prepare a provider account for boot, make it the default provider and
-    /// say what boot will do; safe to run again
+    /// Prepare a provider account, make it the default provider and say what
+    /// start will do; safe to run again
     Setup {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Boot a VM, record it, provision it with each profile, print its id
-    Boot {
+    /// Create a VM, record it, provision it with each profile, print its id
+    Start {
         /// 1 to 63 lowercase letters, digits or hyphens
         name: String,
         /// Profile to apply once the VM answers; repeat it to apply several in order
@@ -42,8 +42,8 @@ enum Command {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Stop a recorded VM on the provider that booted it; it stays recorded
-    Close { id: String },
+    /// Stop a recorded VM on the provider that created it; it stays recorded
+    Stop { id: String },
     /// Delete a recorded VM and its data for good, then its record
     Remove { id: String },
 }
@@ -72,12 +72,12 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
     let file = config::load(config_path)?;
     match command {
         Command::Setup { provider } => setup(provider, file, config_path),
-        Command::Boot {
+        Command::Start {
             name,
             profiles,
             provider,
-        } => boot(&name, provider, file, &profiles),
-        Command::Close { id } => close(&VmId::from(id), file.providers),
+        } => start(&name, provider, file, &profiles),
+        Command::Stop { id } => stop(&VmId::from(id), file.providers),
         Command::Remove { id } => remove(&VmId::from(id), file.providers),
     }
 }
@@ -105,7 +105,7 @@ fn setup(
     Ok(())
 }
 
-fn boot(
+fn start(
     name: &str,
     args: ProviderArgs,
     file: Config,
@@ -120,15 +120,15 @@ fn boot(
         .map(|profile| adapters::profile(profile))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
-    let vm = lifecycle::boot(provider.as_ref(), &ledger, &profiles, &spec)?;
+    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec)?;
     println!("{vm}");
     Ok(())
 }
 
-fn close(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
+fn stop(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
     let ledger = FileLedger::find(vm)?;
     let provider = adapters::provider(ledger.provider(), file)?;
-    lifecycle::close(provider.as_ref(), vm)?;
+    lifecycle::stop(provider.as_ref(), vm)?;
     Ok(())
 }
 

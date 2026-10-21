@@ -11,27 +11,27 @@ pub enum Error {
     )]
     InvalidName { name: String },
 
-    #[error("the provider is not ready to boot VMs")]
+    #[error("the provider is not ready to start VMs")]
     Setup {
         #[source]
         cause: Cause,
     },
 
-    #[error("could not boot `{name}`")]
-    Boot {
+    #[error("could not create `{name}`")]
+    Create {
         name: String,
         #[source]
         cause: Cause,
     },
 
-    #[error("booted {vm} but could not record it; it is still running")]
+    #[error("created {vm} but could not record it; it is still running")]
     Record {
         vm: VmId,
         #[source]
         cause: Cause,
     },
 
-    #[error("booted {vm} but could not reach it; it is still running")]
+    #[error("started {vm} but could not reach it; it is still running")]
     Shell {
         vm: VmId,
         #[source]
@@ -46,8 +46,8 @@ pub enum Error {
         cause: Cause,
     },
 
-    #[error("could not close {vm}; it may still be running")]
-    Close {
+    #[error("could not stop {vm}; it may still be running")]
+    Stop {
         vm: VmId,
         #[source]
         cause: Cause,

@@ -27,7 +27,7 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `setup` prepares the account and is safe to repeat. `boot` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
@@ -58,7 +58,7 @@ sequenceDiagram
 
 The provider becomes the default only once its setup succeeds. A provider that is not ready never becomes the default.
 
-### `boot`
+### `start`
 
 ```mermaid
 sequenceDiagram
@@ -70,10 +70,10 @@ sequenceDiagram
     participant L as Ledger
     participant Pr as Profiles
     participant S as Shell
-    You->>CLI: workspace boot NAME
+    You->>CLI: workspace start NAME
     CLI->>CLI: check the name, build the provider and the profiles
-    CLI->>Core: boot
-    Core->>P: boot(spec)
+    CLI->>Core: start
+    Core->>P: create(spec)
     P-->>Core: VM id, before the VM is ready
     Core->>L: record(id, spec)
     Core->>P: shell(id)
@@ -87,9 +87,9 @@ sequenceDiagram
     CLI-->>You: prints the VM id
 ```
 
-The record is written right after the provider returns the id, before anything waits. If you interrupt a boot, the VM is already recorded.
+The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
 
-### `close` and `remove`
+### `stop` and `remove`
 
 ```mermaid
 sequenceDiagram
@@ -99,13 +99,13 @@ sequenceDiagram
     participant L as Ledger
     participant Core as core
     participant P as Provider
-    You->>CLI: workspace close ID, or workspace remove ID
+    You->>CLI: workspace stop ID, or workspace remove ID
     CLI->>L: find(ID)
     L-->>CLI: the provider named in the record
     CLI->>CLI: build that provider
-    alt close
-        CLI->>Core: close
-        Core->>P: close(ID)
+    alt stop
+        CLI->>Core: stop
+        Core->>P: stop(ID)
         Note over L: the record stays
     else remove
         CLI->>Core: remove
@@ -114,9 +114,9 @@ sequenceDiagram
     end
 ```
 
-## How a boot can end
+## How a start can end
 
-Each step of a boot can fail. What is left depends on how far it got.
+Each step of a start can fail. What is left depends on how far it got.
 
 ```mermaid
 stateDiagram-v2
@@ -141,7 +141,7 @@ stateDiagram-v2
     Ready --> [*]
 ```
 
-Nothing is closed for you. A failed VM keeps running and the error names it, so you decide whether to fix it, close it or remove it. When the record itself fails, the error message is the only place the id appears.
+Nothing is stopped for you. A failed VM keeps running and the error names it, so you decide whether to fix it, stop it or remove it. When the record itself fails, the error message is the only place the id appears.
 
 ## What a failure leaves behind
 
@@ -159,14 +159,14 @@ Nothing is closed for you. A failed VM keeps running and the error names it, so 
 
 ## Records
 
-`boot` writes one file per VM, named after the VM id, in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file names the provider and the VM name:
+`start` writes one file per VM, named after the VM id, in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file names the provider and the VM name:
 
 ```
 provider=boat
 name=dev
 ```
 
-The file is written under a temporary name, then renamed, so it is never half written. After an interrupted boot, list that directory to find the VM.
+The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, list that directory to find the VM.
 
 ```mermaid
 stateDiagram-v2
@@ -174,15 +174,15 @@ stateDiagram-v2
     state "No record" as None
     state "Record on disk" as Present
     [*] --> None
-    None --> Present: boot gets an id
-    Present --> Present: close, or a failed remove
+    None --> Present: start gets an id
+    Present --> Present: stop, or a failed remove
     Present --> None: remove succeeds
 ```
 
 ## Guarantees
 
-- The record is written as soon as the provider returns the id. The only gap is inside `Provider::boot`, between the provider starting the VM and returning its id, so adapters return the id as early as they can.
+- The record is written as soon as the provider returns the id. The only gap is inside `Provider::create`, between the provider starting the VM and returning its id, so adapters return the id as early as they can.
 - A failure after the id never stops or deletes the VM.
-- `close` keeps the record, since a stopped VM still exists.
+- `stop` keeps the record, since a stopped VM still exists.
 - `remove` deletes the record only after the provider confirms the VM is gone.
-- Closing a stopped or deleted VM succeeds, and so does removing a deleted one, so every command can be repeated.
+- Stopping a stopped or deleted VM succeeds, and so does removing a deleted one, so every command can be repeated.

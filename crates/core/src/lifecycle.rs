@@ -10,17 +10,17 @@ pub fn setup(provider: &dyn Provider) -> Result<String, Error> {
 
 /// # Errors
 ///
-/// [`Error::Boot`] when the provider fails to start the VM. [`Error::Record`],
-/// [`Error::Shell`] and [`Error::Provision`] mean the VM booted but is not
-/// ready: it is left running, never closed automatically, and the error names
-/// it.
-pub fn boot(
+/// [`Error::Create`] when the provider fails to create the VM.
+/// [`Error::Record`], [`Error::Shell`] and [`Error::Provision`] mean the VM
+/// was created but is not ready: it is left running, never stopped
+/// automatically, and the error names it.
+pub fn start(
     provider: &dyn Provider,
     ledger: &dyn Ledger,
     profiles: &[Box<dyn Profile>],
     spec: &VmSpec,
 ) -> Result<VmId, Error> {
-    let vm = provider.boot(spec).map_err(|cause| Error::Boot {
+    let vm = provider.create(spec).map_err(|cause| Error::Create {
         name: spec.name().to_owned(),
         cause,
     })?;
@@ -38,9 +38,9 @@ pub fn boot(
 
 /// # Errors
 ///
-/// [`Error::Close`] when the provider fails to stop the VM.
-pub fn close(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
-    provider.close(vm).map_err(|cause| Error::Close {
+/// [`Error::Stop`] when the provider fails to stop the VM.
+pub fn stop(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
+    provider.stop(vm).map_err(|cause| Error::Stop {
         vm: vm.clone(),
         cause,
     })

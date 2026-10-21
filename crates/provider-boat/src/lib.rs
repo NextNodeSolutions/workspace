@@ -44,7 +44,7 @@ impl Provider for Boat {
     }
 
     /// Boat names sandboxes itself, so a VM's name lives only in its record.
-    fn boot(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
+    fn create(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
         let Settings {
             machine_type,
             ttl,
@@ -72,7 +72,7 @@ impl Provider for Boat {
         Ok(Box::new(BoatShell::new(vm.clone())))
     }
 
-    fn close(&self, vm: &VmId) -> Result<(), Cause> {
+    fn stop(&self, vm: &VmId) -> Result<(), Cause> {
         let request = match cli::call::<IgnoredAny>("stop", &[vm.as_str()]) {
             Err(error) if !error.is_refusal() => return Err(error.into()),
             request => request,

@@ -22,7 +22,7 @@ pub enum LedgerError {
     NoDataDirectory,
     #[error("vm id `{0}` cannot name a record file")]
     UnsafeId(VmId),
-    #[error("no record of {0}: only VMs that `workspace boot` recorded can be closed or removed")]
+    #[error("no record of {0}: only VMs that `workspace start` recorded can be stopped or removed")]
     Unknown(VmId),
     #[error("{} names no provider", .0.display())]
     NoProvider(PathBuf),
