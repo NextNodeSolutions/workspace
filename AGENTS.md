@@ -70,7 +70,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Working against real providers
 
-- Starting a VM costs money, and setup changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards.
+- Starting a VM costs money, and setup changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards, unless the adapter's `AGENTS.md` says a resource must stay. Boat's does for environments: deleting one burns its name for good.
 - To test behavior, use a fake provider CLI on `PATH` whenever you can.
 - Never print, log or commit credentials.
 

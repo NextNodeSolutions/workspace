@@ -24,7 +24,7 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 
 - **Least privilege.** Sandboxes start from workspace's own environment, which passes only the sandbox's own boat key. A sandbox needs that key to stop itself, and the key reaches nothing else. Do not turn on GitHub access, secrets or agent logins there. A profile that needs a credential passes it on stdin.
 - **Check before every start.** `create` and `resume` read the environment's effective toggles, and refuse unless they match exactly. A hand edit to the environment therefore cannot give sandboxes more than intended. `resume` also pins the sandbox to that environment, since a stopped sandbox otherwise picks up whatever an upgrade gave its old version.
-- **Setup owns only its environment.** It creates the environment when it is missing, and sets the toggles only when they differ, since each change creates a version. Then it reads the result back. It never touches the account's default environment.
+- **Setup owns only its environment.** It creates the environment when it is missing, and sets the toggles only when they differ, since each change creates a version. Then it reads the result back. It never touches the account's default environment, and nothing in the adapter ever deletes an environment, since Boat keeps a deleted environment's name taken for good.
 
 ## Options
 
@@ -33,5 +33,7 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 
 ## Testing against Boat
 
-- Creating a sandbox costs money, and setup changes the account. Get the user's go-ahead first, and delete what you created.
+- Creating a sandbox costs money, and setup changes the account. Get the user's go-ahead first, and delete the sandboxes you created.
+- **Never delete a Boat environment, not even one made for a test.** `boat env rm` only marks an environment as deleted: it vanishes from `boat env list` and `boat env info`, but its name stays taken for good, and `boat env new` with that name fails with a raw unique-constraint error. Neither the CLI nor the API can free the name, since both need the id of an environment they no longer list. Each deletion therefore burns a name on the account, and deleting the default name would break `setup` for the user.
+- **Reuse one test environment.** Ask the user which name to test with, and keep that environment between test runs. To test a changed environment, flip a toggle with `boat env set` and let `setup` reset it. To test a missing one, point the config at a name that was never created, rather than delete one.
 - To test behavior, put a fake `boat` on `PATH` that prints recorded JSON.

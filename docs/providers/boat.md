@@ -38,6 +38,7 @@ stateDiagram-v2
     state "Everything injected" as Full
     state "Set up, start allowed" as Ready
     state "Changed by hand" as Changed
+    state "Deleted, name still taken" as Deleted
 
     [*] --> Missing
     Missing --> Full: setup runs boat env new
@@ -45,12 +46,14 @@ stateDiagram-v2
     Ready --> Ready: setup again changes nothing
     Ready --> Changed: someone flips a toggle
     Changed --> Ready: setup runs boat env set
-    Ready --> Missing: boat env rm
+    Ready --> Deleted: boat env rm
+    Deleted --> [*]: setup needs another name
 ```
 
 - `start` creates a sandbox only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
 - Each change creates a new version of the environment. New sandboxes start from the latest one, and running ones keep theirs.
 - `setup` never touches the account's default environment, since your other sandboxes start from it.
+- Do not delete the environment with `boat env rm`. Boat only marks it as deleted and keeps its name taken for good, so `setup` can no longer create an environment by that name, and you have to name another one with `--boat-environment` or `environment`.
 
 ## Sandbox states
 
