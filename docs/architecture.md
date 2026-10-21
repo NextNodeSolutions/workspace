@@ -27,7 +27,7 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
@@ -71,11 +71,17 @@ sequenceDiagram
     participant Pr as Profiles
     participant S as Shell
     You->>CLI: workspace start NAME
-    CLI->>CLI: check the name, build the provider and the profiles
+    CLI->>L: find the record named NAME
+    CLI->>CLI: build its provider, or else the default one, and the profiles
     CLI->>Core: start
-    Core->>P: create(spec)
-    P-->>Core: VM id, before the VM is ready
-    Core->>L: record(id, spec)
+    alt NAME has no record
+        Core->>P: create(spec)
+        P-->>Core: VM id, before the VM is ready
+        Core->>L: record(id, spec)
+    else NAME is recorded
+        Core->>P: resume(id)
+        Note over P: succeeds at once when the VM runs
+    end
     Core->>P: shell(id)
     Note over P: waits until the VM answers
     P-->>Core: a shell on the VM
@@ -88,6 +94,8 @@ sequenceDiagram
 ```
 
 The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
+
+A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options, such as the machine type, shape only the VMs that `start` creates.
 
 ### `stop` and `remove`
 
@@ -120,7 +128,8 @@ Each step of a start can fail. What is left depends on how far it got.
 
 ```mermaid
 stateDiagram-v2
-    state "Starting the VM" as Allocating
+    state "Creating the VM" as Allocating
+    state "Resuming the recorded VM" as Resuming
     state "Recording it" as Recording
     state "Waiting until it answers" as Waiting
     state "Applying profiles" as Provisioning
@@ -128,8 +137,12 @@ stateDiagram-v2
     state "Failed, nothing to clean up" as NoVm
     state "Failed, VM runs without a record" as Unrecorded
     state "Failed, VM runs and is recorded" as Recorded
+    state "Failed, VM and record as they were" as Kept
 
-    [*] --> Allocating
+    [*] --> Allocating: the name has no record
+    [*] --> Resuming: the name is recorded
+    Resuming --> Waiting: the provider resumes it
+    Resuming --> Kept: the provider cannot
     Allocating --> Recording: id returned
     Allocating --> NoVm: provider fails
     Recording --> Waiting: record written
@@ -148,7 +161,7 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 | Failure | What is left |
 | --- | --- |
 | The VM name is invalid | Nothing |
-| The VM name is already recorded | Nothing |
+| The recorded VM cannot resume | The VM as it was, and its record. If the provider no longer has it, `remove` forgets the record. |
 | The provider cannot start the VM | Nothing |
 | The record cannot be written | A running VM with no record. The error holds its id. |
 | The VM never answers | A running, recorded VM |
@@ -169,7 +182,7 @@ name=dev
 
 The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, `workspace list` shows the VM.
 
-Since the record holds the name, `stop` and `remove` take the name in place of the id. A name means one VM: `start` refuses a name that is already recorded, before it creates anything. If older records share a name, a command given that name fails and lists their ids, so you pick one.
+Since the record holds the name, `stop` and `remove` take the name in place of the id. A name means one VM: when a name is recorded, `start` resumes that VM rather than create another. If older records share a name, a command given that name fails and lists their ids, so you pick one.
 
 ```mermaid
 stateDiagram-v2
@@ -178,7 +191,7 @@ stateDiagram-v2
     state "Record on disk" as Present
     [*] --> None
     None --> Present: start gets an id
-    Present --> Present: stop, or a failed remove
+    Present --> Present: start, stop, or a failed remove
     Present --> None: remove succeeds
 ```
 
@@ -186,6 +199,6 @@ stateDiagram-v2
 
 - The record is written as soon as the provider returns the id. The only gap is inside `Provider::create`, between the provider starting the VM and returning its id, so adapters return the id as early as they can.
 - A failure after the id never stops or deletes the VM.
-- `stop` keeps the record, since a stopped VM still exists.
+- `stop` keeps the record, since a stopped VM still exists, and `start` resumes it rather than create another.
 - `remove` deletes the record only after the provider confirms the VM is gone.
 - Stopping a stopped or deleted VM succeeds, and so does removing a deleted one, so every command can be repeated.

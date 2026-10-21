@@ -82,6 +82,14 @@ pub(crate) enum BoatError {
     #[error("the sandbox is {state}, so it cannot be reached")]
     NotRunning { state: State },
 
+    #[error("the sandbox is {state}, so it cannot resume")]
+    NotResumable { state: State },
+
+    #[error(
+        "Boat no longer has this sandbox, its disk included, so it cannot resume: `workspace remove` forgets its record"
+    )]
+    Gone,
+
     #[error("the sandbox is {state}, so the stop did not finish")]
     NotStopped { state: State },
 

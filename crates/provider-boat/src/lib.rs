@@ -64,6 +64,18 @@ impl Provider for Boat {
         Ok(VmId::from(id))
     }
 
+    /// Boat resumes only a stopped sandbox, so one that is still stopping is
+    /// waited for first. A running one needs nothing.
+    fn resume(&self, vm: &VmId) -> Result<(), Cause> {
+        let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
+        match state {
+            State::Stopped => Ok(sandbox::resume(vm.as_str())?),
+            State::Gone => Err(BoatError::Gone.into()),
+            state if state.is_running() => Ok(()),
+            state => Err(BoatError::NotResumable { state }.into()),
+        }
+    }
+
     fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Cause> {
         let state = sandbox::wait_while(vm.as_str(), START_TIMEOUT, State::is_starting)?;
         if state != State::Up {

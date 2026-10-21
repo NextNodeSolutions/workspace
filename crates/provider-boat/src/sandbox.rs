@@ -12,6 +12,11 @@ use crate::error::BoatError;
 use crate::process;
 
 const NEW: &str = "new";
+const RESUME: &str = "resume";
+
+/// Without it, `boat resume` waits until the sandbox is ready. `shell` does
+/// that wait instead, within its own time limit, as after `boat new`.
+const NO_WAIT: &str = "--no-wait";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,6 +30,11 @@ pub(crate) enum State {
 }
 
 impl State {
+    /// Whether the sandbox runs, or is on its way to running.
+    pub(crate) fn is_running(&self) -> bool {
+        matches!(self, Self::Up | Self::Starting)
+    }
+
     pub(crate) fn is_starting(&self) -> bool {
         *self == Self::Starting
     }
@@ -138,6 +148,17 @@ fn read_id(lines: &Receiver<io::Result<String>>, timeout: Duration) -> Result<Cr
 fn sandbox_id(line: &str) -> Option<String> {
     let event: Event = serde_json::from_str(line).ok()?;
     event.id
+}
+
+pub(crate) fn resume(id: &str) -> Result<(), BoatError> {
+    let refusal = match cli::run(RESUME, &[id, NO_WAIT]) {
+        Err(error) if error.is_refusal() => error,
+        outcome => return outcome.map(drop),
+    };
+    if read(id)?.is_running() {
+        return Ok(());
+    }
+    Err(refusal)
 }
 
 pub(crate) fn wait_while(

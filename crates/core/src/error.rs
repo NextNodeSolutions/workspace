@@ -31,6 +31,13 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("could not resume {vm}; its record is kept")]
+    Resume {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("started {vm} but could not reach it; it is still running")]
     Shell {
         vm: VmId,

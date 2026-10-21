@@ -12,7 +12,7 @@ On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapt
 | Flag | Config key | What it sets |
 | --- | --- | --- |
 | `--boat-type` | `type` | The machine size. It defaults to the smallest. A larger one is a choice you make here. |
-| `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h` |
+| `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h`. The timer starts again on each resume. |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
 
 `workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type.
@@ -64,7 +64,7 @@ stateDiagram-v2
     Starting --> Other: Boat fails
     Up --> Stopping: stop, or the TTL runs out
     Stopping --> Stopped: disk snapshotted
-    Stopped --> Starting: boat resume
+    Stopped --> Starting: start, through boat resume
     Up --> Gone: remove
     Stopped --> Gone: remove
     Gone --> [*]
@@ -76,7 +76,7 @@ stateDiagram-v2
 
 - **Up** means the sandbox accepts ssh.
 - **Stopping** means Boat is snapshotting the disk before it stops the machine.
-- **Stopped** means nothing runs and the disk is kept, so `boat resume <id>` can bring the sandbox back. Once Boat erases the disk after its retention period, the sandbox can no longer resume.
+- **Stopped** means nothing runs and the disk is kept, so `workspace start` can bring the sandbox back. Once Boat erases the disk after its retention period, the sandbox can no longer resume.
 - **Gone** means Boat answers that the sandbox does not exist.
 
 ## What each operation does
@@ -131,6 +131,37 @@ sequenceDiagram
 ```
 
 `boat new` prints the sandbox id on its first line, before the sandbox is ready. The adapter returns it at once, which keeps the time without a record short. `shell` then waits through the starting states, and fails at once on a stopped, deleted or failed sandbox. Boat names sandboxes itself, so the VM name lives only in the record.
+
+### `resume`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Core as core
+    participant A as Boat adapter
+    participant B as boat CLI
+    Core->>A: resume(ID)
+    loop while Stopping, within a time limit
+        A->>B: boat info
+    end
+    alt Up or Starting
+        A-->>Core: done, since it runs
+    else Stopped
+        A->>B: boat resume --no-wait
+        alt Boat accepted
+            A-->>Core: done
+        else Boat refused
+            A->>B: boat info
+            A-->>Core: done if it now runs, else the refusal
+        end
+    else Gone, or another state
+        A-->>Core: error that names the state
+    end
+    Core->>A: shell
+    Note over A,B: waits for Up, as after create
+```
+
+Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. The sandbox keeps its machine type and environment. A gone sandbox cannot come back: its error says that `workspace remove` forgets the record.
 
 ### `Shell::run`, used by profiles
 

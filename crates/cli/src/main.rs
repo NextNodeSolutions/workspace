@@ -35,7 +35,8 @@ enum Command {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Create a VM, record it, provision it with each profile, print its id
+    /// Create the VM, or resume it when its name is recorded, then apply each
+    /// profile and print its id; safe to run again
     Start {
         /// 1 to 63 lowercase letters, digits or hyphens
         name: String,
@@ -118,23 +119,29 @@ fn setup(
     Ok(())
 }
 
+/// A recorded VM runs on the provider that created it, so its record picks
+/// the provider. A new VM runs on the default one.
 fn start(
     name: &str,
     args: ProviderArgs,
     file: Config,
     profile_names: &[String],
 ) -> Result<(), Box<dyn Error>> {
-    let ProviderArgs { provider, options } = args;
-    let provider_name = provider.or(file.provider).ok_or(NoProvider::NotSetUp)?;
     let spec = VmSpec::new(name)?;
-    ledger::ensure_free(spec.name())?;
+    let recorded = ledger::named(spec.name())?;
+    let ProviderArgs { provider, options } = args;
+    let provider_name = match &recorded {
+        Some(record) => record.provider.clone(),
+        None => provider.or(file.provider).ok_or(NoProvider::NotSetUp)?,
+    };
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
     let profiles = profile_names
         .iter()
         .map(|profile| adapters::profile(profile))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
-    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec)?;
+    let recorded = recorded.map(|record| record.id);
+    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
     println!("{vm}");
     Ok(())
 }

@@ -13,6 +13,12 @@ pub trait Provider {
 
     /// # Errors
     ///
+    /// When the VM cannot run again, for example because the provider no
+    /// longer has it. The VM is left as it was.
+    fn resume(&self, vm: &VmId) -> Result<(), Cause>;
+
+    /// # Errors
+    ///
     /// When the VM is not running or does not become reachable.
     fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Cause>;
 

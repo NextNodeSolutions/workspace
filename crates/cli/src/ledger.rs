@@ -37,10 +37,6 @@ pub enum LedgerError {
     Unknown(String),
     #[error("several VMs are named `{name}`, so name one by its id: {ids}")]
     Ambiguous { name: String, ids: String },
-    #[error(
-        "a VM named `{name}` is already recorded, as {id}: stop or remove it, or pick another name"
-    )]
-    Taken { name: String, id: VmId },
     #[error("{} has no `{field}` line", path.display())]
     Incomplete { path: PathBuf, field: &'static str },
     #[error("cannot {action} {}", path.display())]
@@ -132,18 +128,6 @@ pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
         });
     }
     Ok(matches.pop())
-}
-
-/// Fails when a VM named `name` is already recorded, so that one name
-/// always means one VM.
-pub fn ensure_free(name: &str) -> Result<(), LedgerError> {
-    match named(name)? {
-        Some(record) => Err(LedgerError::Taken {
-            name: record.name,
-            id: record.id,
-        }),
-        None => Ok(()),
-    }
 }
 
 fn records_directory() -> Result<PathBuf, LedgerError> {

@@ -10,24 +10,22 @@ pub fn setup(provider: &dyn Provider) -> Result<String, Error> {
 
 /// # Errors
 ///
-/// [`Error::Create`] when the provider fails to create the VM.
+/// [`Error::Create`] when the provider fails to create the VM, and
+/// [`Error::Resume`] when it fails to resume the recorded one.
 /// [`Error::Record`], [`Error::Shell`] and [`Error::Provision`] mean the VM
-/// was created but is not ready: it is left running, never stopped
-/// automatically, and the error names it.
+/// runs but is not ready: it is left running, never stopped automatically,
+/// and the error names it.
 pub fn start(
     provider: &dyn Provider,
     ledger: &dyn Ledger,
     profiles: &[Box<dyn Profile>],
     spec: &VmSpec,
+    recorded: Option<VmId>,
 ) -> Result<VmId, Error> {
-    let vm = provider.create(spec).map_err(|cause| Error::Create {
-        name: spec.name().to_owned(),
-        cause,
-    })?;
-    ledger.record(&vm, spec).map_err(|cause| Error::Record {
-        vm: vm.clone(),
-        cause,
-    })?;
+    let vm = match recorded {
+        Some(vm) => resume(provider, vm)?,
+        None => create(provider, ledger, spec)?,
+    };
     let shell = provider.shell(&vm).map_err(|cause| Error::Shell {
         vm: vm.clone(),
         cause,
@@ -60,6 +58,26 @@ pub fn remove(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result
         vm: vm.clone(),
         cause,
     })
+}
+
+/// Creates a VM and records it at once, before anything waits on it.
+fn create(provider: &dyn Provider, ledger: &dyn Ledger, spec: &VmSpec) -> Result<VmId, Error> {
+    let vm = provider.create(spec).map_err(|cause| Error::Create {
+        name: spec.name().to_owned(),
+        cause,
+    })?;
+    ledger.record(&vm, spec).map_err(|cause| Error::Record {
+        vm: vm.clone(),
+        cause,
+    })?;
+    Ok(vm)
+}
+
+fn resume(provider: &dyn Provider, vm: VmId) -> Result<VmId, Error> {
+    match provider.resume(&vm) {
+        Ok(()) => Ok(vm),
+        Err(cause) => Err(Error::Resume { vm, cause }),
+    }
 }
 
 fn provision(shell: &dyn Shell, profiles: &[Box<dyn Profile>], vm: &VmId) -> Result<(), Error> {

@@ -1,6 +1,6 @@
 # Configuration
 
-Providers take options, such as a machine type. You set an option with a flag, in the config file, or not at all.
+Providers take options, such as a machine type, which shape the VMs that `start` creates. A resumed VM keeps what it was created with. You set an option with a flag, in the config file, or not at all.
 
 ## Which value wins
 
@@ -45,7 +45,7 @@ provider = "boat"
 type = "small"
 ```
 
-`workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `start` asks you to run `setup`. `stop` and `remove` need neither, since a VM's record names the provider that created it.
+`workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `start` asks you to run `setup`. A recorded VM always runs on the provider that created it, since its record names that provider, so `start` on a recorded name, `stop` and `remove` need neither.
 
 ## Mistakes stop the command
 
