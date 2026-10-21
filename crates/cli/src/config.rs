@@ -60,12 +60,9 @@ pub enum ConfigError {
 }
 
 pub fn load(path: Option<&Path>) -> Result<Config, ConfigError> {
-    let (path, is_required) = match path {
-        Some(path) => (path.to_owned(), true),
-        None => match default_path() {
-            Some(path) => (path, false),
-            None => return Ok(Config::default()),
-        },
+    let is_required = path.is_some();
+    let Some(path) = resolve(path) else {
+        return Ok(Config::default());
     };
     let Some(text) = read(&path, is_required)? else {
         return Ok(Config::default());
@@ -82,10 +79,7 @@ pub fn load(path: Option<&Path>) -> Result<Config, ConfigError> {
 ///
 /// When the file cannot be read, parsed or written.
 pub fn remember_provider(path: Option<&Path>, provider: &str) -> Result<PathBuf, ConfigError> {
-    let path = match path {
-        Some(path) => path.to_owned(),
-        None => default_path().ok_or(ConfigError::NoConfigDirectory)?,
-    };
+    let path = resolve(path).ok_or(ConfigError::NoConfigDirectory)?;
     let text = read(&path, false)?.unwrap_or_default();
     let mut document: DocumentMut = text.parse().map_err(|source| ConfigError::Uneditable {
         path: path.clone(),
@@ -97,6 +91,11 @@ pub fn remember_provider(path: Option<&Path>, provider: &str) -> Result<PathBuf,
     document[PROVIDER_KEY] = toml_edit::value(provider);
     write(&path, &document.to_string())?;
     Ok(path)
+}
+
+/// `path`, or else the default file. `None` when there is neither.
+fn resolve(path: Option<&Path>) -> Option<PathBuf> {
+    path.map(Path::to_owned).or_else(default_path)
 }
 
 fn default_path() -> Option<PathBuf> {
