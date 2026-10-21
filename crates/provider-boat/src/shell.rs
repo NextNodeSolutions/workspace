@@ -25,6 +25,17 @@ impl BoatShell {
     }
 }
 
+/// Runs `boat ssh <id>` on the user's terminal. There is no timeout: the
+/// session lasts as long as the person wants. Its exit status is that of the
+/// last command typed in it, not a sign that it failed, so only a failure to
+/// run `boat` is an error.
+pub(crate) fn attach(vm: &VmId) -> Result<(), BoatError> {
+    cli::interactive(SSH, &[vm.as_str()])
+        .status()
+        .map_err(BoatError::Spawn)?;
+    Ok(())
+}
+
 impl Shell for BoatShell {
     fn run(&self, script: &str, stdin: &[u8]) -> Result<String, Cause> {
         let output = self.execute(script, stdin)?;

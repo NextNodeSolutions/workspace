@@ -36,6 +36,16 @@ pub fn start(
 
 /// # Errors
 ///
+/// [`Error::Attach`] when no session could be opened.
+pub fn attach(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
+    provider.attach(vm).map_err(|cause| Error::Attach {
+        vm: vm.clone(),
+        cause,
+    })
+}
+
+/// # Errors
+///
 /// [`Error::Stop`] when the provider fails to stop the VM.
 pub fn stop(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
     provider.stop(vm).map_err(|cause| Error::Stop {

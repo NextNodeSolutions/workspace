@@ -27,7 +27,7 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` hands your terminal to a shell on the VM until you leave it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
@@ -90,12 +90,21 @@ sequenceDiagram
         Pr->>S: run(script, stdin)
     end
     Core-->>CLI: VM id
-    CLI-->>You: prints the VM id
+    alt with -d
+        CLI-->>You: prints the VM id
+    else without -d
+        CLI->>Core: attach(id)
+        Core->>P: attach(id)
+        P-->>You: a shell on the VM, until you leave it
+        CLI-->>You: says that the VM still runs
+    end
 ```
 
 The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
 
 A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options, such as the machine type, shape only the VMs that `start` creates.
+
+Without `-d`, `start` ends by handing your terminal to a shell on the VM. Leaving the shell leaves the VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
 
 ### `stop` and `remove`
 
@@ -165,6 +174,7 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 | The provider cannot start the VM | Nothing |
 | The record cannot be written | A running VM with no record. The error holds its id. |
 | The VM never answers | A running, recorded VM |
+| The shell cannot open | A running, recorded VM. `start` opens the shell again. |
 | A profile fails | A running, recorded VM, as the failed step left it |
 | Setup stops | The account as far as setup got, and the config file as it was. Run it again. |
 | The stop does not finish | The VM may still run. The record stays. |

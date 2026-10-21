@@ -8,14 +8,30 @@ use crate::error::BoatError;
 use crate::process;
 
 const PROGRAM: &str = "boat";
-const FLAGS: [&str; 2] = ["--json", "--no-update"];
+const JSON: &str = "--json";
+const NO_UPDATE: &str = "--no-update";
 
 /// Boat API calls answer within seconds, so one past this has stalled.
 pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
     let mut command = Command::new(PROGRAM);
-    command.args(subcommand.split(' ')).args(FLAGS).args(args);
+    command
+        .args(subcommand.split(' '))
+        .args([JSON, NO_UPDATE])
+        .args(args);
+    command
+}
+
+/// `boat <subcommand> <args>` for a person at the terminal. It skips the
+/// update check but keeps boat's own output, since that output is the
+/// session the person asked for.
+pub(crate) fn interactive(subcommand: &'static str, args: &[&str]) -> Command {
+    let mut command = Command::new(PROGRAM);
+    command
+        .args(subcommand.split(' '))
+        .arg(NO_UPDATE)
+        .args(args);
     command
 }
 

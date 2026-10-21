@@ -84,6 +84,10 @@ impl Provider for Boat {
         Ok(Box::new(BoatShell::new(vm.clone())))
     }
 
+    fn attach(&self, vm: &VmId) -> Result<(), Cause> {
+        Ok(shell::attach(vm)?)
+    }
+
     fn stop(&self, vm: &VmId) -> Result<(), Cause> {
         let request = match cli::call::<IgnoredAny>("stop", &[vm.as_str()]) {
             Err(error) if !error.is_refusal() => return Err(error.into()),

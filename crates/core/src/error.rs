@@ -53,6 +53,13 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("could not open a shell on {vm}; it is still running")]
+    Attach {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("could not stop {vm}; it may still be running")]
     Stop {
         vm: VmId,

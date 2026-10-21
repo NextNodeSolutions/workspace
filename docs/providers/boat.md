@@ -1,6 +1,6 @@
 # Boat
 
-On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core.
+On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core, but for the shell that `start` opens for you.
 
 ## Before you start
 
@@ -163,6 +163,24 @@ sequenceDiagram
 
 Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. The sandbox keeps its machine type and environment. A gone sandbox cannot come back: its error says that `workspace remove` forgets the record.
 
+### `attach`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant A as Boat adapter
+    participant B as boat ssh
+    participant S as Sandbox
+    A->>B: boat ssh ID, on your terminal
+    B->>S: opens a shell
+    You->>S: work in the shell
+    You->>B: leave the shell
+    B-->>A: exits, and the sandbox keeps running
+```
+
+`boat ssh` runs without `--json` here, since its output is the session you read. It has no time limit, since the session lasts as long as you want. Its exit status is that of the last command typed in the session, so it does not count as a failure: only a `boat` that cannot run is an error.
+
 ### `Shell::run`, used by profiles
 
 ```mermaid
@@ -228,7 +246,7 @@ sequenceDiagram
 
 ## One call to the boat CLI
 
-Every call asks for JSON output and skips boat's update check. One module owns every `boat` process, and each call ends in one of these states:
+Every call skips boat's update check, and every call but the interactive shell asks for JSON output. One module owns every `boat` process, and each call ends in one of these states:
 
 ```mermaid
 stateDiagram-v2

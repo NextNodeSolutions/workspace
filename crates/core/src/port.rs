@@ -24,6 +24,11 @@ pub trait Provider {
 
     /// # Errors
     ///
+    /// When no session could be opened. The VM is left as it was.
+    fn attach(&self, vm: &VmId) -> Result<(), Cause>;
+
+    /// # Errors
+    ///
     /// When the VM may still be running.
     fn stop(&self, vm: &VmId) -> Result<(), Cause>;
 

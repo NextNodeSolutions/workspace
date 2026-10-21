@@ -9,7 +9,8 @@ cargo build --release
 ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
 workspace setup                       # once, to prepare the provider account
-workspace start dev                   # creates dev, or resumes it, and prints its id
+workspace start dev                   # creates dev, or resumes it, then opens a shell on it
+workspace start -d dev                # the same, but prints its id instead of a shell
 workspace stop dev                    # stops the VM and keeps its disk
 workspace remove dev                  # deletes the VM and its data for good
 workspace list                        # shows each recorded VM
@@ -37,7 +38,7 @@ stateDiagram-v2
 ```
 
 1. `setup` prepares a provider account once, for example by creating what new VMs start from, then makes it the default provider. Running it again is safe.
-2. `start` creates a VM and records it on your disk, or resumes the VM recorded under that name. It waits until the VM answers, applies each profile in order, then prints the VM id. On a running VM, it changes nothing.
+2. `start` creates a VM and records it on your disk, or resumes the VM recorded under that name. It waits until the VM answers, applies each profile in order, then opens a shell on it. Leaving the shell leaves the VM running. With `-d`, it prints the VM id instead, for scripts. On a running VM, it only opens the shell.
 3. `stop` stops the VM. Its disk and its record stay, so `start` can resume it.
 4. `remove` deletes the VM and its data, then its record.
 

@@ -4,6 +4,7 @@ mod ledger;
 mod xdg;
 
 use std::error::Error;
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -35,11 +36,14 @@ enum Command {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Create the VM, or resume it when its name is recorded, then apply each
-    /// profile and print its id; safe to run again
+    /// Create the VM, or resume it when its name is recorded, apply each
+    /// profile, then open a shell on it; safe to run again
     Start {
         /// 1 to 63 lowercase letters, digits or hyphens
         name: String,
+        /// Print the VM's id instead of opening a shell on it, as scripts need
+        #[arg(short, long)]
+        detach: bool,
         /// Profile to apply once the VM answers; repeat it to apply several in order
         #[arg(long = "profile", value_name = "PROFILE")]
         profiles: Vec<String>,
@@ -60,6 +64,10 @@ enum Command {
     #[command(visible_alias = "ls")]
     List,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("no terminal to open a shell in: pass -d to start the VM without one")]
+struct NoTerminal;
 
 #[derive(Args)]
 struct ProviderArgs {
@@ -87,9 +95,10 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
         Command::Setup { provider } => setup(provider, file, config_path),
         Command::Start {
             name,
+            detach,
             profiles,
             provider,
-        } => start(&name, provider, file, &profiles),
+        } => start(&name, provider, file, &profiles, detach),
         Command::Stop { vm } => stop(&vm, file.providers),
         Command::Remove { vm } => remove(&vm, file.providers),
         Command::List => list(),
@@ -120,13 +129,19 @@ fn setup(
 }
 
 /// A recorded VM runs on the provider that created it, so its record picks
-/// the provider. A new VM runs on the default one.
+/// the provider. A new VM runs on the default one. Without a terminal for
+/// the shell, it fails before it creates anything.
 fn start(
     name: &str,
     args: ProviderArgs,
     file: Config,
     profile_names: &[String],
+    detach: bool,
 ) -> Result<(), Box<dyn Error>> {
+    let has_terminal = io::stdin().is_terminal() && io::stdout().is_terminal();
+    if !detach && !has_terminal {
+        return Err(NoTerminal.into());
+    }
     let spec = VmSpec::new(name)?;
     let recorded = ledger::named(spec.name())?;
     let ProviderArgs { provider, options } = args;
@@ -142,7 +157,13 @@ fn start(
     let ledger = FileLedger::for_provider(&provider_name)?;
     let recorded = recorded.map(|record| record.id);
     let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
-    println!("{vm}");
+    if detach {
+        println!("{vm}");
+        return Ok(());
+    }
+    lifecycle::attach(provider.as_ref(), &vm)?;
+    // The VM costs money until it stops, so leaving the shell says so.
+    eprintln!("{name} is still running: `workspace stop {name}` stops it.");
     Ok(())
 }
 
