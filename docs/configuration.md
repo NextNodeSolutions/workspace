@@ -51,4 +51,4 @@ type = "small"
 
 An unknown key, an unknown table or a bad value is an error, and the error points at the line. So a typo never goes unnoticed.
 
-Every command reads the file, `stop` and `remove` included, because they build the provider the same way. A broken file therefore blocks them too until you fix it.
+Every command that runs on a provider reads the file, `stop` and `remove` included, because they build the provider the same way. A broken file therefore blocks them too until you fix it. `list` runs on no provider and skips the file, so a broken file never hides your VMs.

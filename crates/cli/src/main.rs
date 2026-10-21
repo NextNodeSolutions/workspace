@@ -90,17 +90,18 @@ fn main() -> ExitCode {
 }
 
 fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
-    let file = config::load(config_path)?;
+    let file = || config::load(config_path);
     match command {
-        Command::Setup { provider } => setup(provider, file, config_path),
+        Command::Setup { provider } => setup(provider, file()?, config_path),
         Command::Start {
             name,
             detach,
             profiles,
             provider,
-        } => start(&name, provider, file, &profiles, detach),
-        Command::Stop { vm } => stop(&vm, file.providers),
-        Command::Remove { vm } => remove(&vm, file.providers),
+        } => start(&name, provider, file()?, &profiles, detach),
+        Command::Stop { vm } => stop(&vm, file()?.providers),
+        Command::Remove { vm } => remove(&vm, file()?.providers),
+        // It builds no provider, so a broken config file never hides the VMs.
         Command::List => list(),
     }
 }
