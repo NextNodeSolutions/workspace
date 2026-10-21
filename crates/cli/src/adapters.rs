@@ -17,6 +17,23 @@ pub struct UnknownAdapter {
     available: String,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum NoProvider {
+    #[error("no provider chosen: run `workspace setup`, or pass --provider")]
+    NotSetUp,
+    #[error("several providers exist, so pick one with --provider: {available}")]
+    Several { available: String },
+}
+
+pub fn sole_provider() -> Result<String, NoProvider> {
+    match PROVIDERS {
+        [(name, _)] => Ok((*name).to_owned()),
+        _ => Err(NoProvider::Several {
+            available: list_names(PROVIDERS),
+        }),
+    }
+}
+
 pub fn provider(name: &str, options: Providers) -> Result<Box<dyn Provider>, UnknownAdapter> {
     let create = find("provider", PROVIDERS, name)?;
     Ok(create(options))

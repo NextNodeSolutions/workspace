@@ -7,11 +7,11 @@ These are the rules for changing this repository, for people and coding agents a
 These come first. A change that weakens one is wrong, even when it compiles.
 
 1. **A running VM is never lost.** VMs cost money. The record is written as soon as a provider returns an id, before anything waits on the VM, and a provider returns the id as early as it can. Nothing stops or deletes a VM because a step failed. The error names the VM, and the user decides.
-2. **Every command can be repeated.** Onboarding, profiles, close and remove are safe to run again. Something already done counts as success, such as closing a stopped VM or removing a deleted one.
+2. **Every command can be repeated.** Setup, profiles, close and remove are safe to run again. Something already done counts as success, such as closing a stopped VM or removing a deleted one.
 3. **A record never disappears before its VM.** `close` keeps the record. `remove` deletes it only after the provider confirms the VM is gone.
 4. **Secrets travel on stdin.** They never appear in a script, a command argument, a log or an error message.
 5. **A VM gets the least it needs from the account.** Provider accounts hold credentials. An adapter passes a VM only what it needs, and checks that before booting.
-6. **Shared account resources stay untouched.** Onboarding creates and owns what it needs. It never changes what other tools or people on the account rely on, such as a default environment.
+6. **Shared account resources stay untouched.** Setup creates and owns what it needs. It never changes what other tools or people on the account rely on, such as a default environment.
 
 ## Architecture rules
 
@@ -70,7 +70,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Working against real providers
 
-- Booting a VM costs money, and onboarding changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards.
+- Booting a VM costs money, and setup changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards.
 - To test behavior, use a fake provider CLI on `PATH` whenever you can.
 - Never print, log or commit credentials.
 

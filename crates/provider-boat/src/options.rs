@@ -35,7 +35,7 @@ pub struct Options {
     #[arg(long = "boat-ttl", value_name = "DURATION")]
     ttl: Option<Ttl>,
 
-    /// Boat environment the sandboxes start from, which onboard sets up
+    /// Boat environment the sandboxes start from, which setup prepares
     /// [default: workspace]
     #[arg(long = "boat-environment", value_name = "NAME")]
     environment: Option<EnvironmentName>,

@@ -4,7 +4,7 @@ pub trait Provider {
     /// # Errors
     ///
     /// When the account is not ready for `boot`.
-    fn onboard(&self) -> Result<String, Cause>;
+    fn setup(&self) -> Result<String, Cause>;
 
     /// # Errors
     ///

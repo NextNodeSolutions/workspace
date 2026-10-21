@@ -54,17 +54,17 @@ pub(crate) enum BoatError {
     },
 
     #[error(
-        "the Boat environment `{name}` does not exist: `workspace onboard --provider boat` creates it"
+        "the Boat environment `{name}` does not exist: `workspace setup --provider boat` creates it"
     )]
     NoEnvironment { name: EnvironmentName },
 
     #[error(
-        "`{name}` is the default Boat environment, which other sandboxes start from, so onboarding leaves it alone: name another one with --boat-environment or `environment` in the config file"
+        "`{name}` is the default Boat environment, which other sandboxes start from, so setup leaves it alone: name another one with --boat-environment or `environment` in the config file"
     )]
     DefaultEnvironment { name: EnvironmentName },
 
     #[error(
-        "the Boat environment `{name}` does not match what `workspace onboard --provider boat` sets: {changed}"
+        "the Boat environment `{name}` does not match what `workspace setup --provider boat` sets: {changed}"
     )]
     Mismatch {
         name: EnvironmentName,

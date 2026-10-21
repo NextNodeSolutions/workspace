@@ -12,7 +12,7 @@ pub enum Error {
     InvalidName { name: String },
 
     #[error("the provider is not ready to boot VMs")]
-    Onboard {
+    Setup {
         #[source]
         cause: Cause,
     },

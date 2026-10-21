@@ -27,7 +27,7 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `onboard` prepares the account and is safe to repeat. `boot` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `boot` returns the VM id as soon as the provider assigns one. `shell` waits until the VM answers. `close` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
@@ -36,7 +36,7 @@ An adapter reports a failure as an opaque cause. The core wraps it in its own er
 
 ## Commands step by step
 
-### `onboard`
+### `setup`
 
 ```mermaid
 sequenceDiagram
@@ -45,15 +45,18 @@ sequenceDiagram
     participant CLI as cli
     participant Core as core
     participant P as Provider
-    You->>CLI: workspace onboard --provider NAME
+    You->>CLI: workspace setup
     CLI->>CLI: load the config file, then put the flags over it
-    CLI->>CLI: build the provider with those options
-    CLI->>Core: onboard
-    Core->>P: onboard()
+    CLI->>CLI: pick the provider, then build it with those options
+    CLI->>Core: setup
+    Core->>P: setup()
     P-->>Core: summary
     Core-->>CLI: summary
+    CLI->>CLI: write the provider into the config file
     CLI-->>You: prints the summary
 ```
+
+The provider becomes the default only once its setup succeeds. A provider that is not ready never becomes the default.
 
 ### `boot`
 
@@ -67,7 +70,7 @@ sequenceDiagram
     participant L as Ledger
     participant Pr as Profiles
     participant S as Shell
-    You->>CLI: workspace boot NAME --provider NAME
+    You->>CLI: workspace boot NAME
     CLI->>CLI: check the name, build the provider and the profiles
     CLI->>Core: boot
     Core->>P: boot(spec)
@@ -149,7 +152,7 @@ Nothing is closed for you. A failed VM keeps running and the error names it, so 
 | The record cannot be written | A running VM with no record. The error holds its id. |
 | The VM never answers | A running, recorded VM |
 | A profile fails | A running, recorded VM, as the failed step left it |
-| Onboarding stops | The account as far as onboarding got. Run it again. |
+| Setup stops | The account as far as setup got, and the config file as it was. Run it again. |
 | The stop does not finish | The VM may still run. The record stays. |
 | The delete fails | The VM may still exist. The record stays, so `remove` can run again. |
 | The VM is deleted but its record is not | No VM. Run `remove` again to delete the record. |

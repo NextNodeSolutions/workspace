@@ -7,8 +7,9 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use adapters::NoProvider;
 use clap::{Args, Parser, Subcommand};
-use config::Providers;
+use config::{Config, Providers};
 use ledger::FileLedger;
 use workspace_core::{VmId, VmSpec, lifecycle};
 
@@ -25,8 +26,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Prepare a provider account for boot and say what boot will do; safe to run again
-    Onboard {
+    /// Prepare a provider account for boot, make it the default provider and
+    /// say what boot will do; safe to run again
+    Setup {
         #[command(flatten)]
         provider: ProviderArgs,
     },
@@ -48,9 +50,9 @@ enum Command {
 
 #[derive(Args)]
 struct ProviderArgs {
-    /// Provider to use, such as boat
+    /// Provider to use, such as boat [default: the one `workspace setup` chose]
     #[arg(long)]
-    provider: String,
+    provider: Option<String>,
     #[command(flatten)]
     options: Providers,
 }
@@ -66,40 +68,53 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Command, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
-    let file = config::load(config)?;
+fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let file = config::load(config_path)?;
     match command {
-        Command::Onboard { provider } => onboard(provider, file),
+        Command::Setup { provider } => setup(provider, file, config_path),
         Command::Boot {
             name,
             profiles,
             provider,
         } => boot(&name, provider, file, &profiles),
-        Command::Close { id } => close(&VmId::from(id), file),
-        Command::Remove { id } => remove(&VmId::from(id), file),
+        Command::Close { id } => close(&VmId::from(id), file.providers),
+        Command::Remove { id } => remove(&VmId::from(id), file.providers),
     }
 }
 
-fn onboard(args: ProviderArgs, file: Providers) -> Result<(), Box<dyn Error>> {
+/// Prepares the provider, then remembers it as the default, so a provider
+/// that is not ready never becomes the default.
+fn setup(
+    args: ProviderArgs,
+    file: Config,
+    config_path: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
     let ProviderArgs { provider, options } = args;
-    let provider = adapters::provider(&provider, options.or(file))?;
-    let summary = lifecycle::onboard(provider.as_ref())?;
+    let name = match provider.or(file.provider) {
+        Some(name) => name,
+        None => adapters::sole_provider()?,
+    };
+    let provider = adapters::provider(&name, options.or(file.providers))?;
+    let summary = lifecycle::setup(provider.as_ref())?;
+    let path = config::remember_provider(config_path, &name)?;
     println!("{summary}");
+    println!(
+        "Commands run on {name} unless --provider names another, as {} sets.",
+        path.display()
+    );
     Ok(())
 }
 
 fn boot(
     name: &str,
     args: ProviderArgs,
-    file: Providers,
+    file: Config,
     profile_names: &[String],
 ) -> Result<(), Box<dyn Error>> {
-    let ProviderArgs {
-        provider: provider_name,
-        options,
-    } = args;
+    let ProviderArgs { provider, options } = args;
+    let provider_name = provider.or(file.provider).ok_or(NoProvider::NotSetUp)?;
     let spec = VmSpec::new(name)?;
-    let provider = adapters::provider(&provider_name, options.or(file))?;
+    let provider = adapters::provider(&provider_name, options.or(file.providers))?;
     let profiles = profile_names
         .iter()
         .map(|profile| adapters::profile(profile))

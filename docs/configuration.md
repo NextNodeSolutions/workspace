@@ -34,6 +34,19 @@ type = "small"
 
 Each provider's page lists its keys, and `workspace boot --help` lists the matching flags.
 
+## The default provider
+
+`setup` and `boot` run on the provider that `--provider` names, or else on the one that the `provider` key names at the top of the file:
+
+```toml
+provider = "boat"
+
+[providers.boat]
+type = "small"
+```
+
+`workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `boot` asks you to run `setup`. `close` and `remove` need neither, since a VM's record names the provider that booted it.
+
 ## Mistakes stop the command
 
 An unknown key, an unknown table or a bad value is an error, and the error points at the line. So a typo never goes unnoticed.

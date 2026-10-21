@@ -1,10 +1,10 @@
 mod cli;
 mod environment;
 mod error;
-mod onboard;
 mod options;
 mod process;
 mod sandbox;
+mod setup;
 mod shell;
 
 use std::time::Duration;
@@ -39,8 +39,8 @@ impl Boat {
 }
 
 impl Provider for Boat {
-    fn onboard(&self) -> Result<String, Cause> {
-        Ok(onboard::run(&self.settings)?)
+    fn setup(&self) -> Result<String, Cause> {
+        Ok(setup::run(&self.settings)?)
     }
 
     /// Boat names sandboxes itself, so a VM's name lives only in its record.

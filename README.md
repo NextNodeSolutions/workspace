@@ -8,8 +8,8 @@
 cargo build --release
 ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
-workspace onboard --provider boat     # once, to prepare the provider account
-workspace boot dev --provider boat    # prints the VM id
+workspace setup                       # once, to prepare the provider account
+workspace boot dev                    # prints the VM id
 workspace close <id>                  # stops the VM and keeps its disk
 workspace remove <id>                 # deletes the VM and its data for good
 ```
@@ -32,10 +32,10 @@ stateDiagram-v2
         Stopped --> NoVm: workspace remove
     }
     [*] --> Unprepared
-    Unprepared --> Prepared: workspace onboard
+    Unprepared --> Prepared: workspace setup
 ```
 
-1. `onboard` prepares a provider account once, for example by creating what new VMs start from. Running it again is safe.
+1. `setup` prepares a provider account once, for example by creating what new VMs start from, then makes it the default provider. Running it again is safe.
 2. `boot` starts a VM, records it on your disk, waits until it answers, applies each profile in order, then prints the VM id.
 3. `close` stops the VM. Its disk and its record stay, so the VM can resume.
 4. `remove` deletes the VM and its data, then its record.

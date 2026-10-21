@@ -1,11 +1,11 @@
 # Boat
 
-With `--provider boat`, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core.
+On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core.
 
 ## Before you start
 
 1. Install the Boat CLI, put it on your `PATH`, and sign in with `boat login`.
-2. Run `workspace onboard --provider boat`. Run it again whenever you change an option.
+2. Run `workspace setup --provider boat`. It prepares your account and makes Boat the default provider. Run it again whenever you change an option.
 
 ## Options
 
@@ -15,7 +15,7 @@ With `--provider boat`, each VM is a [Boat](https://boat.dev) sandbox. The adapt
 | `--boat-ttl` | `ttl` | How long after boot Boat stops the sandbox, such as `90m` or `8h` |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
 
-`workspace boot --help` shows the accepted values and the defaults. `onboard` checks that your Boat plan allows the machine type.
+`workspace boot --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type.
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
@@ -40,17 +40,17 @@ stateDiagram-v2
     state "Changed by hand" as Changed
 
     [*] --> Missing
-    Missing --> Full: onboard runs boat env new
-    Full --> Ready: onboard runs boat env set
-    Ready --> Ready: onboard again changes nothing
+    Missing --> Full: setup runs boat env new
+    Full --> Ready: setup runs boat env set
+    Ready --> Ready: setup again changes nothing
     Ready --> Changed: someone flips a toggle
-    Changed --> Ready: onboard runs boat env set
+    Changed --> Ready: setup runs boat env set
     Ready --> Missing: boat env rm
 ```
 
 - `boot` works only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
 - Each change creates a new version of the environment. New sandboxes start from the latest one, and running ones keep theirs.
-- `onboard` never touches the account's default environment, since your other sandboxes start from it.
+- `setup` never touches the account's default environment, since your other sandboxes start from it.
 
 ## Sandbox states
 
@@ -81,7 +81,7 @@ stateDiagram-v2
 
 ## What each operation does
 
-### `onboard`
+### `setup`
 
 ```mermaid
 sequenceDiagram

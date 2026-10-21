@@ -3,9 +3,9 @@ use crate::{Error, VmId, VmSpec};
 
 /// # Errors
 ///
-/// [`Error::Onboard`] when the account is not ready.
-pub fn onboard(provider: &dyn Provider) -> Result<String, Error> {
-    provider.onboard().map_err(|cause| Error::Onboard { cause })
+/// [`Error::Setup`] when the account is not ready.
+pub fn setup(provider: &dyn Provider) -> Result<String, Error> {
+    provider.setup().map_err(|cause| Error::Setup { cause })
 }
 
 /// # Errors
