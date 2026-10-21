@@ -35,7 +35,9 @@ pub enum LedgerError {
     UnsafeId(VmId),
     #[error("no VM is recorded as `{0}`: `workspace list` shows the recorded VMs")]
     Unknown(String),
-    #[error("several VMs are named `{name}`, so name one by its id: {ids}")]
+    #[error(
+        "several VMs are named `{name}`: {ids}. `stop` and `remove` take an id, so remove all but one"
+    )]
     Ambiguous { name: String, ids: String },
     #[error("{} has no `{field}` line", path.display())]
     Incomplete { path: PathBuf, field: &'static str },
