@@ -1,22 +1,16 @@
 mod adapters;
+mod commands;
 mod config;
 mod files;
 mod ledger;
 mod xdg;
 
 use std::error::Error;
-use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use adapters::NoProvider;
 use clap::{Args, Parser, Subcommand};
-use config::{Config, Providers};
-use ledger::FileLedger;
-use workspace_core::{VmSpec, lifecycle};
-
-/// Separates the columns that `list` prints.
-const COLUMN_GAP: &str = "  ";
+use config::Providers;
 
 #[derive(Parser)]
 #[command(about = "Start, stop and remove VMs on any provider")]
@@ -66,18 +60,6 @@ enum Command {
     List,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("no terminal to open a shell in: pass -d to start the VM without one")]
-struct NoTerminal;
-
-#[derive(Debug, thiserror::Error)]
-#[error("`{name}` runs on {recorded}, not {asked}: drop --provider, or pick another name")]
-struct OtherProvider {
-    name: String,
-    recorded: String,
-    asked: String,
-}
-
 #[derive(Args)]
 struct ProviderArgs {
     /// Provider to use, such as boat [default: the one `workspace setup` chose]
@@ -101,121 +83,18 @@ fn main() -> ExitCode {
 fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
     let file = || config::load(config_path);
     match command {
-        Command::Setup { provider } => setup(provider, file()?, config_path),
+        Command::Setup { provider } => commands::setup(provider, file()?, config_path),
         Command::Start {
             name,
             detach,
             profiles,
             provider,
-        } => start(&name, provider, file()?, &profiles, detach),
-        Command::Stop { vm } => stop(&vm, file()?.providers),
-        Command::Remove { vm } => remove(&vm, file()?.providers),
+        } => commands::start(&name, provider, file()?, &profiles, detach),
+        Command::Stop { vm } => commands::stop(&vm, file()?.providers),
+        Command::Remove { vm } => commands::remove(&vm, file()?.providers),
         // It builds no provider, so a broken config file never hides the VMs.
-        Command::List => list(),
+        Command::List => commands::list(),
     }
-}
-
-/// Prepares the provider, then remembers it as the default, so a provider
-/// that is not ready never becomes the default.
-fn setup(
-    args: ProviderArgs,
-    file: Config,
-    config_path: Option<&Path>,
-) -> Result<(), Box<dyn Error>> {
-    let ProviderArgs { provider, options } = args;
-    let name = match provider.or(file.provider) {
-        Some(name) => name,
-        None => adapters::sole_provider()?,
-    };
-    let provider = adapters::provider(&name, options.or(file.providers))?;
-    let summary = lifecycle::setup(provider.as_ref())?;
-    // Printed first, so that a config file that cannot be written still
-    // leaves on screen what setup changed on the account.
-    println!("{summary}");
-    let path = config::remember_provider(config_path, &name)?;
-    println!(
-        "Commands run on {name} unless --provider names another, as {} sets.",
-        path.display()
-    );
-    Ok(())
-}
-
-/// A recorded VM runs on the provider that created it, so its record picks
-/// the provider. A new VM runs on the default one. Without a terminal for
-/// the shell, it fails before it creates anything.
-fn start(
-    name: &str,
-    args: ProviderArgs,
-    file: Config,
-    profile_names: &[String],
-    detach: bool,
-) -> Result<(), Box<dyn Error>> {
-    let has_terminal = io::stdin().is_terminal() && io::stdout().is_terminal();
-    if !detach && !has_terminal {
-        return Err(NoTerminal.into());
-    }
-    let spec = VmSpec::new(name)?;
-    let recorded = ledger::named(spec.name())?;
-    let ProviderArgs { provider, options } = args;
-    let provider_name = match (&recorded, provider) {
-        (Some(record), Some(asked)) if asked != record.provider => {
-            return Err(OtherProvider {
-                name: record.name.clone(),
-                recorded: record.provider.clone(),
-                asked,
-            }
-            .into());
-        }
-        (Some(record), _) => record.provider.clone(),
-        (None, provider) => provider.or(file.provider).ok_or(NoProvider::NotSetUp)?,
-    };
-    let provider = adapters::provider(&provider_name, options.or(file.providers))?;
-    let profiles = profile_names
-        .iter()
-        .map(|profile| adapters::profile(profile))
-        .collect::<Result<Vec<_>, _>>()?;
-    let ledger = FileLedger::for_provider(&provider_name)?;
-    let recorded = recorded.map(|record| record.id);
-    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
-    if detach {
-        println!("{vm}");
-        return Ok(());
-    }
-    lifecycle::attach(provider.as_ref(), &vm)?;
-    // The VM costs money until it stops, so leaving the shell says so.
-    eprintln!("{name} is still running: `workspace stop {name}` stops it.");
-    Ok(())
-}
-
-fn stop(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
-    let record = ledger::find(vm)?;
-    let provider = adapters::provider(&record.provider, file)?;
-    lifecycle::stop(provider.as_ref(), &record.id)?;
-    Ok(())
-}
-
-fn remove(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
-    let record = ledger::find(vm)?;
-    let provider = adapters::provider(&record.provider, file)?;
-    let ledger = FileLedger::for_provider(&record.provider)?;
-    lifecycle::remove(provider.as_ref(), &ledger, &record.id)?;
-    Ok(())
-}
-
-/// One line per VM, in aligned columns.
-fn list() -> Result<(), Box<dyn Error>> {
-    let records = ledger::records()?;
-    let name_width = records.iter().map(|record| record.name.len()).max();
-    let id_width = records.iter().map(|record| record.id.as_str().len()).max();
-    let (name_width, id_width) = (name_width.unwrap_or(0), id_width.unwrap_or(0));
-    for record in &records {
-        let (name, id) = (&record.name, record.id.as_str());
-        println!(
-            "{name:name_width$}{COLUMN_GAP}{id:id_width$}{COLUMN_GAP}{}",
-            record.provider
-        );
-    }
-    Ok(())
 }
 
 fn report(error: &dyn Error) {
