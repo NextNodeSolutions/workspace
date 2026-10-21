@@ -19,7 +19,7 @@ const DEFAULT_MACHINE_TYPE: MachineType = MachineType::Small;
 
 const DEFAULT_TTL: Ttl = Ttl(8 * SECONDS_PER_HOUR);
 
-const DEFAULT_ENVIRONMENT: &str = "workspace";
+const DEFAULT_ENVIRONMENT: &str = "main";
 
 #[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Boat")]
@@ -36,7 +36,7 @@ pub struct Options {
     ttl: Option<Ttl>,
 
     /// Boat environment the sandboxes start from, which setup prepares
-    /// [default: workspace]
+    /// [default: main]
     #[arg(long = "boat-environment", value_name = "NAME")]
     environment: Option<EnvironmentName>,
 }
