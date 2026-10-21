@@ -183,7 +183,7 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 
 ## Records
 
-`start` writes one file per VM, named after the VM id, in `$XDG_DATA_HOME/workspace/vms/`, or in `~/.local/share/workspace/vms/` when `XDG_DATA_HOME` is unset. The file names the provider and the VM name:
+`start` writes one file per VM, named after the VM id, under the XDG data directory. The file names the provider and the VM name:
 
 ```
 provider=boat
