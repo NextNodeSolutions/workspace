@@ -5,7 +5,7 @@ use workspace_core::{Cause, VmId};
 
 use crate::cli::{self, Failure};
 use crate::error::BoatError;
-use crate::process;
+use crate::{process, sandbox};
 
 const SSH: &str = "ssh";
 
@@ -23,6 +23,20 @@ impl BoatShell {
         let child = cli::spawn(SSH, &args, Stdio::piped())?;
         process::collect(SSH, child, stdin, None)
     }
+}
+
+pub(crate) fn attach(vm: &VmId) -> Result<(), BoatError> {
+    let status = cli::interactive(SSH, &[vm.as_str()])
+        .status()
+        .map_err(BoatError::Spawn)?;
+    if status.success() {
+        return Ok(());
+    }
+    let state = sandbox::read(vm.as_str())?;
+    if state.is_running() {
+        return Ok(());
+    }
+    Err(BoatError::NotRunning { state })
 }
 
 impl Shell for BoatShell {

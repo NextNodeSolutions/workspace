@@ -1,17 +1,17 @@
 mod cli;
 mod environment;
 mod error;
-mod onboard;
 mod options;
 mod process;
 mod sandbox;
+mod setup;
 mod shell;
 
 use std::time::Duration;
 
 use serde::de::IgnoredAny;
 use workspace_core::port::{Provider, Shell};
-use workspace_core::{Cause, VmId, VmSpec};
+use workspace_core::{Failure, VmId, VmSpec};
 
 use error::BoatError;
 use options::Settings;
@@ -36,43 +36,64 @@ impl Boat {
             settings: options.resolve(),
         }
     }
+
+    fn start_flags(&self) -> Result<[String; 4], BoatError> {
+        let Settings {
+            ttl, environment, ..
+        } = &self.settings;
+        environment::check(environment)?;
+        Ok([
+            "--ttl".to_owned(),
+            ttl.seconds().to_string(),
+            "--environment".to_owned(),
+            environment.as_str().to_owned(),
+        ])
+    }
 }
 
 impl Provider for Boat {
-    fn onboard(&self) -> Result<String, Cause> {
-        Ok(onboard::run(&self.settings)?)
+    fn setup(&self) -> Result<String, Failure> {
+        Ok(setup::run(&self.settings)?)
     }
 
     /// Boat names sandboxes itself, so a VM's name lives only in its record.
-    fn boot(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
-        let Settings {
-            machine_type,
-            ttl,
-            environment,
-        } = &self.settings;
-        environment::check(environment)?;
-        let ttl = ttl.seconds().to_string();
-        let args = [
-            "--type",
-            machine_type.as_str(),
-            "--ttl",
-            &ttl,
-            "--environment",
-            environment.as_str(),
-        ];
+    fn create(&self, _spec: &VmSpec) -> Result<VmId, Failure> {
+        let flags = self.start_flags()?;
+        let mut args = vec!["--type", self.settings.machine_type.as_str()];
+        args.extend(flags.iter().map(String::as_str));
         let id = sandbox::create(&args)?;
         Ok(VmId::from(id))
     }
 
-    fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Cause> {
-        let state = sandbox::wait_while(vm.as_str(), START_TIMEOUT, State::is_starting)?;
+    fn resume(&self, vm: &VmId) -> Result<(), Failure> {
+        let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
+        match state {
+            State::Stopped => {
+                let flags = self.start_flags()?;
+                Ok(sandbox::resume(
+                    vm.as_str(),
+                    &flags.each_ref().map(String::as_str),
+                )?)
+            }
+            State::Gone => Err(BoatError::Gone.into()),
+            state if state.is_running() => Ok(()),
+            state => Err(BoatError::NotResumable { state }.into()),
+        }
+    }
+
+    fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Failure> {
+        let state = sandbox::wait_until_up(vm.as_str(), START_TIMEOUT)?;
         if state != State::Up {
             return Err(BoatError::NotRunning { state }.into());
         }
         Ok(Box::new(BoatShell::new(vm.clone())))
     }
 
-    fn close(&self, vm: &VmId) -> Result<(), Cause> {
+    fn attach(&self, vm: &VmId) -> Result<(), Failure> {
+        Ok(shell::attach(vm)?)
+    }
+
+    fn stop(&self, vm: &VmId) -> Result<(), Failure> {
         let request = match cli::call::<IgnoredAny>("stop", &[vm.as_str()]) {
             Err(error) if !error.is_refusal() => return Err(error.into()),
             request => request,
@@ -85,7 +106,7 @@ impl Provider for Boat {
         }
     }
 
-    fn remove(&self, vm: &VmId) -> Result<(), Cause> {
+    fn remove(&self, vm: &VmId) -> Result<(), Failure> {
         match cli::call::<IgnoredAny>("delete", &[vm.as_str(), "--yes"]) {
             Err(error) if !error.is_gone() => Err(error.into()),
             _ => Ok(()),

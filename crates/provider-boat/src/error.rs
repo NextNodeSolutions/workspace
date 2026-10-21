@@ -1,6 +1,8 @@
 use std::io;
 use std::string::FromUtf8Error;
 
+use workspace_core::{Failure, Reason};
+
 use crate::options::{EnvironmentName, MachineType};
 use crate::sandbox::State;
 
@@ -32,7 +34,9 @@ pub(crate) enum BoatError {
         source: serde_json::Error,
     },
 
-    #[error("`boat {subcommand}` did not finish within {seconds} s, so it was killed")]
+    #[error(
+        "`boat {subcommand}` did not finish within {seconds} s, so it was killed, though Boat may still carry it out"
+    )]
     Stalled {
         subcommand: &'static str,
         seconds: u64,
@@ -53,19 +57,15 @@ pub(crate) enum BoatError {
         reason: String,
     },
 
-    #[error(
-        "the Boat environment `{name}` does not exist: `workspace onboard --provider boat` creates it"
-    )]
+    #[error("the Boat environment `{name}` does not exist")]
     NoEnvironment { name: EnvironmentName },
 
     #[error(
-        "`{name}` is the default Boat environment, which other sandboxes start from, so onboarding leaves it alone: name another one with --boat-environment or `environment` in the config file"
+        "`{name}` is the default Boat environment, which other sandboxes start from, so setup leaves it alone: name another one with --boat-environment or `environment` in the config file"
     )]
     DefaultEnvironment { name: EnvironmentName },
 
-    #[error(
-        "the Boat environment `{name}` does not match what `workspace onboard --provider boat` sets: {changed}"
-    )]
+    #[error("the Boat environment `{name}` no longer matches what setup sets: {changed}")]
     Mismatch {
         name: EnvironmentName,
         changed: String,
@@ -81,6 +81,12 @@ pub(crate) enum BoatError {
 
     #[error("the sandbox is {state}, so it cannot be reached")]
     NotRunning { state: State },
+
+    #[error("the sandbox is {state}, so it cannot resume")]
+    NotResumable { state: State },
+
+    #[error("Boat no longer has this sandbox, its disk included")]
+    Gone,
 
     #[error("the sandbox is {state}, so the stop did not finish")]
     NotStopped { state: State },
@@ -106,6 +112,21 @@ impl BoatError {
 
     pub(crate) fn is_gone(&self) -> bool {
         matches!(self, Self::Refused { code: Some(code), .. } if code == NOT_FOUND)
+    }
+
+    fn reason(&self) -> Reason {
+        match self {
+            Self::NoEnvironment { .. } | Self::Mismatch { .. } => Reason::NotSetUp,
+            Self::Gone | Self::NotRunning { state: State::Gone } => Reason::Gone,
+            error if error.is_gone() => Reason::Gone,
+            _ => Reason::Other,
+        }
+    }
+}
+
+impl From<BoatError> for Failure {
+    fn from(error: BoatError) -> Self {
+        Failure::new(error.reason(), error)
     }
 }
 

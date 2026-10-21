@@ -7,11 +7,11 @@ These are the rules for changing this repository, for people and coding agents a
 These come first. A change that weakens one is wrong, even when it compiles.
 
 1. **A running VM is never lost.** VMs cost money. The record is written as soon as a provider returns an id, before anything waits on the VM, and a provider returns the id as early as it can. Nothing stops or deletes a VM because a step failed. The error names the VM, and the user decides.
-2. **Every command can be repeated.** Onboarding, profiles, close and remove are safe to run again. Something already done counts as success, such as closing a stopped VM or removing a deleted one.
-3. **A record never disappears before its VM.** `close` keeps the record. `remove` deletes it only after the provider confirms the VM is gone.
+2. **Every command can be repeated.** Setup, profiles, start, stop and remove are safe to run again. Something already done counts as success, such as starting a running VM, stopping a stopped VM or removing a deleted one.
+3. **A record never disappears before its VM.** `stop` keeps the record. `remove` deletes it only after the provider confirms the VM is gone.
 4. **Secrets travel on stdin.** They never appear in a script, a command argument, a log or an error message.
-5. **A VM gets the least it needs from the account.** Provider accounts hold credentials. An adapter passes a VM only what it needs, and checks that before booting.
-6. **Shared account resources stay untouched.** Onboarding creates and owns what it needs. It never changes what other tools or people on the account rely on, such as a default environment.
+5. **A VM gets the least it needs from the account.** Provider accounts hold credentials. An adapter passes a VM only what it needs, and checks that before a VM starts, whether it is created or resumed.
+6. **Shared account resources stay untouched.** Setup creates and owns what it needs. It never changes what other tools or people on the account rely on, such as a default environment.
 
 ## Architecture rules
 
@@ -21,7 +21,7 @@ The project is built as ports and adapters. `docs/architecture.md` shows the pie
 - **The core does no IO.** It touches no files, processes or network, reads no environment variables and prints nothing. The logic stays provider-agnostic and easy to reason about, and IO stays at the edges.
 - **The cli is the only composition root.** Only the cli parses arguments, reads the config file and the environment, picks adapters by name, keeps the records and prints. Its commands stay thin.
 - **Provider details stay in the adapter.** The core holds what every provider needs, such as a VM name. Anything specific, such as size, lifetime, region or credentials, is an adapter option.
-- **Failures cross into the core as opaque causes.** An adapter turns each failure of its provider into its own error type, with a message that says what failed and what to do. The core wraps that error without inspecting or downcasting it. No provider type appears in a core signature, and nothing a provider prints reaches the terminal raw.
+- **Failures cross into the core as opaque causes.** An adapter turns each failure of its provider into its own error type, with a message that says what failed and what to do. The core wraps that error without inspecting or downcasting it. No provider type appears in a core signature, and nothing a provider prints reaches the terminal raw, but for the interactive shell that `start` opens, which the user asked to see. With the cause, a provider gives a reason from a short list the core defines, such as the account needing setup or the VM being gone, so the core and the cli act on what happened without reading the cause.
 - **Each adapter owns its options.** One struct per adapter gives both its flags and its config table, holds the defaults and validates the values. The precedence is always flag, then config file, then default. An unknown config key is an error.
 - **External calls are bounded.** A call that should answer quickly gets a time limit. Output read from another process gets a size limit. Only work that can rightly run long, such as a provisioning script, goes without one.
 - **Decide on codes and state, never on wording.** When an external tool fails, branch on its error code, or read the state back. Messages change between versions, codes do not.
@@ -70,7 +70,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Working against real providers
 
-- Booting a VM costs money, and onboarding changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards.
+- Starting a VM costs money, and setup changes the provider account. Get the user's go-ahead before either, and delete what you created afterwards, unless the adapter's `AGENTS.md` says a resource must stay. Boat's does for environments: deleting one burns its name for good.
 - To test behavior, use a fake provider CLI on `PATH` whenever you can.
 - Never print, log or commit credentials.
 

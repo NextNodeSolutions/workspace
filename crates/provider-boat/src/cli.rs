@@ -8,14 +8,23 @@ use crate::error::BoatError;
 use crate::process;
 
 const PROGRAM: &str = "boat";
-const FLAGS: [&str; 2] = ["--json", "--no-update"];
+const JSON: &str = "--json";
+const NO_UPDATE: &str = "--no-update";
 
 /// Boat API calls answer within seconds, so one past this has stalled.
 pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
+    boat(subcommand, &[JSON, NO_UPDATE], args)
+}
+
+pub(crate) fn interactive(subcommand: &'static str, args: &[&str]) -> Command {
+    boat(subcommand, &[NO_UPDATE], args)
+}
+
+fn boat(subcommand: &'static str, flags: &[&str], args: &[&str]) -> Command {
     let mut command = Command::new(PROGRAM);
-    command.args(subcommand.split(' ')).args(FLAGS).args(args);
+    command.args(subcommand.split(' ')).args(flags).args(args);
     command
 }
 

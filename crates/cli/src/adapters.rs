@@ -17,6 +17,21 @@ pub struct UnknownAdapter {
     available: String,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("several providers exist, so pick one with --provider: {available}")]
+pub struct SeveralProviders {
+    available: String,
+}
+
+pub fn sole_provider() -> Result<String, SeveralProviders> {
+    match PROVIDERS {
+        [(name, _)] => Ok((*name).to_owned()),
+        _ => Err(SeveralProviders {
+            available: list_names(PROVIDERS),
+        }),
+    }
+}
+
 pub fn provider(name: &str, options: Providers) -> Result<Box<dyn Provider>, UnknownAdapter> {
     let create = find("provider", PROVIDERS, name)?;
     Ok(create(options))

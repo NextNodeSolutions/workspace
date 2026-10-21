@@ -1,21 +1,21 @@
 # Boat
 
-With `--provider boat`, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core.
+On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapter drives the `boat` CLI, reads everything it prints, and turns every failure into its own error. Boat's output never reaches your terminal or the core, but for the shell that `start` opens for you.
 
 ## Before you start
 
 1. Install the Boat CLI, put it on your `PATH`, and sign in with `boat login`.
-2. Run `workspace onboard --provider boat`. Run it again whenever you change an option.
+2. Run `workspace setup --provider boat`. It prepares your account and makes Boat the default provider. Run it again whenever you change an option.
 
 ## Options
 
 | Flag | Config key | What it sets |
 | --- | --- | --- |
 | `--boat-type` | `type` | The machine size. It defaults to the smallest. A larger one is a choice you make here. |
-| `--boat-ttl` | `ttl` | How long after boot Boat stops the sandbox, such as `90m` or `8h` |
+| `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h`. The timer starts again on each resume. |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
 
-`workspace boot --help` shows the accepted values and the defaults. `onboard` checks that your Boat plan allows the machine type.
+`workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type. The machine type is chosen when `start` creates a sandbox. The TTL and the environment also apply each time `start` resumes one.
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
@@ -36,21 +36,24 @@ The boat key reaches only its own sandbox, so the sandbox can stop itself and no
 stateDiagram-v2
     state "Missing" as Missing
     state "Everything injected" as Full
-    state "Set up, boot allowed" as Ready
+    state "Set up, start allowed" as Ready
     state "Changed by hand" as Changed
+    state "Deleted, name still taken" as Deleted
 
     [*] --> Missing
-    Missing --> Full: onboard runs boat env new
-    Full --> Ready: onboard runs boat env set
-    Ready --> Ready: onboard again changes nothing
+    Missing --> Full: setup runs boat env new
+    Full --> Ready: setup runs boat env set
+    Ready --> Ready: setup again changes nothing
     Ready --> Changed: someone flips a toggle
-    Changed --> Ready: onboard runs boat env set
-    Ready --> Missing: boat env rm
+    Changed --> Ready: setup runs boat env set
+    Ready --> Deleted: boat env rm
+    Deleted --> [*]: setup needs another name
 ```
 
-- `boot` works only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
+- `start` creates a sandbox only when the environment is set up. In any other state it fails before it creates anything, and says what differs.
 - Each change creates a new version of the environment. New sandboxes start from the latest one, and running ones keep theirs.
-- `onboard` never touches the account's default environment, since your other sandboxes start from it.
+- `setup` never touches the account's default environment, since your other sandboxes start from it.
+- Do not delete the environment with `boat env rm`. Boat only marks it as deleted and keeps its name taken for good, so `setup` can no longer create an environment by that name, and you have to name another one with `--boat-environment` or `environment`.
 
 ## Sandbox states
 
@@ -62,9 +65,9 @@ stateDiagram-v2
     [*] --> Starting: boat new
     Starting --> Up: ready
     Starting --> Other: Boat fails
-    Up --> Stopping: close, or the TTL runs out
+    Up --> Stopping: stop, or the TTL runs out
     Stopping --> Stopped: disk snapshotted
-    Stopped --> Starting: boat resume
+    Stopped --> Starting: start, through boat resume
     Up --> Gone: remove
     Stopped --> Gone: remove
     Gone --> [*]
@@ -76,12 +79,12 @@ stateDiagram-v2
 
 - **Up** means the sandbox accepts ssh.
 - **Stopping** means Boat is snapshotting the disk before it stops the machine.
-- **Stopped** means nothing runs and the disk is kept, so `boat resume <id>` can bring the sandbox back. Once Boat erases the disk after its retention period, the sandbox can no longer resume.
+- **Stopped** means nothing runs and the disk is kept, so `workspace start` can bring the sandbox back. Once Boat erases the disk after its retention period, the sandbox can no longer resume.
 - **Gone** means Boat answers that the sandbox does not exist.
 
 ## What each operation does
 
-### `onboard`
+### `setup`
 
 ```mermaid
 sequenceDiagram
@@ -105,9 +108,9 @@ sequenceDiagram
     Note over A,B: stops unless the sandbox would get only its boat key
 ```
 
-It then prints what `boot` will use, and whether it created, reset or kept the environment.
+It then prints what `start` will use, and whether it created, reset or kept the environment.
 
-### `boot`
+### `create`
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +118,7 @@ sequenceDiagram
     participant Core as core
     participant A as Boat adapter
     participant B as boat CLI
-    Core->>A: boot
+    Core->>A: create
     A->>B: boat env list
     Note over A,B: stops unless the environment is set up
     A->>B: boat new, with the type, the TTL and the environment
@@ -130,7 +133,60 @@ sequenceDiagram
     A-->>Core: a shell, once the sandbox is Up
 ```
 
-`boat new` prints the sandbox id on its first line, before the sandbox is ready. The adapter returns it at once, which keeps the time without a record short. `shell` then waits through the starting states, and fails at once on a stopped, deleted or failed sandbox. Boat names sandboxes itself, so the VM name lives only in the record.
+`boat new` prints the sandbox id on its first line, before the sandbox is ready. The adapter returns it at once, which keeps the time without a record short. `shell` then waits through the starting states, and fails at once on a deleted or failed sandbox. It lets a stopped state pass for a short window, since Boat may still report a sandbox it just resumed as stopped, then fails. Boat names sandboxes itself, so the VM name lives only in the record.
+
+### `resume`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Core as core
+    participant A as Boat adapter
+    participant B as boat CLI
+    Core->>A: resume(ID)
+    loop while Stopping, within a time limit
+        A->>B: boat info
+    end
+    alt Up or Starting
+        A-->>Core: done, since it runs
+    else Stopped
+        A->>B: boat env list
+        Note over A,B: stops unless the environment is set up
+        A->>B: boat resume --no-wait, with the TTL and the environment
+        alt Boat accepted
+            A-->>Core: done
+        else Boat refused
+            A->>B: boat info
+            A-->>Core: done if it now runs, else the refusal
+        end
+    else Gone, or another state
+        A-->>Core: error that names the state
+    end
+    Core->>A: shell
+    Note over A,B: waits for Up, as after create, past a stale Stopped
+```
+
+Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. Boat may still report the sandbox as stopped for a moment after it accepts, and that same wait lets it pass, so a resume reads the state no more than it must.
+
+A resumed sandbox gets what its environment holds at that moment, so the adapter checks the environment first, as before a create. It then pins the sandbox to that environment, so the sandbox gets the version just checked, even if someone upgraded the environment while the sandbox was stopped. The sandbox keeps its machine type, and its TTL starts again from the resume. A gone sandbox cannot come back: `start` then says that `workspace remove` forgets its record.
+
+### `attach`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant A as Boat adapter
+    participant B as boat ssh
+    participant S as Sandbox
+    A->>B: boat ssh ID, on your terminal
+    B->>S: opens a shell
+    You->>S: work in the shell
+    You->>B: leave the shell
+    B-->>A: exits, and the sandbox keeps running
+```
+
+`boat ssh` runs without `--json` here, since its output is the session you read. It has no time limit, since the session lasts as long as you want. Its exit status is that of the last command typed in the session, and Boat's own refusals exit the same way. After a non-zero exit, the adapter therefore reads the state back: a sandbox that still runs means the session ended normally, and one that no longer runs means there was no session to give.
 
 ### `Shell::run`, used by profiles
 
@@ -158,7 +214,7 @@ sequenceDiagram
 - **No time limit.** Provisioning can take long, so a script runs until it ends. Its output has a size limit instead.
 - **Telling failures apart.** `boat ssh` exits the same way whether the script failed or Boat refused. Boat's last line tells which, and the adapter reads it.
 
-### `close`
+### `stop`
 
 ```mermaid
 sequenceDiagram
@@ -166,7 +222,7 @@ sequenceDiagram
     participant Core as core
     participant A as Boat adapter
     participant B as boat CLI
-    Core->>A: close(ID)
+    Core->>A: stop(ID)
     A->>B: boat stop
     alt Boat gave no answer
         A-->>Core: error, at once
@@ -197,7 +253,7 @@ sequenceDiagram
 
 ## One call to the boat CLI
 
-Every call asks for JSON output and skips boat's update check. One module owns every `boat` process, and each call ends in one of these states:
+Every call skips boat's update check, and every call but the interactive shell asks for JSON output. One module owns every `boat` process, and each call ends in one of these states:
 
 ```mermaid
 stateDiagram-v2
@@ -219,7 +275,7 @@ stateDiagram-v2
 ```
 
 - **Time limit.** A call that only talks to the Boat API gets one, since it should answer within seconds. `boat ssh` gets none.
-- **Refused** means the Boat API said no, and its code drives decisions. For example, a not-found code means the sandbox is gone, which `close` and `remove` treat as success.
+- **Refused** means the Boat API said no, and its code drives decisions. For example, a not-found code means the sandbox is gone, which `stop` and `remove` treat as success.
 - **Failed** carries the message from boat's last line, or its stderr when there is no such line.
-- **Stalled.** After a kill, the threads reading the pipes are left behind, so a leftover child process that holds a pipe open cannot delay the error.
+- **Stalled.** After a kill, the threads reading the pipes are left behind, so a leftover child process that holds a pipe open cannot delay the error. Boat may still carry out a request it never answered, and the error says so.
 - **Too much output.** Past the limit, the rest of a stream is read and dropped, so the command never blocks on a full pipe.

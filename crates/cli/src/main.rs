@@ -1,5 +1,7 @@
 mod adapters;
+mod commands;
 mod config;
+mod files;
 mod ledger;
 mod xdg;
 
@@ -9,11 +11,9 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use config::Providers;
-use ledger::FileLedger;
-use workspace_core::{VmId, VmSpec, lifecycle};
 
 #[derive(Parser)]
-#[command(about = "Boot, close and remove VMs on any provider")]
+#[command(about = "Start, stop and remove VMs on any provider")]
 struct Cli {
     /// Read options from this file [default: ~/.config/workspace/config.toml]
     #[arg(long, global = true, value_name = "PATH")]
@@ -25,32 +25,46 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Prepare a provider account for boot and say what boot will do; safe to run again
-    Onboard {
+    /// Prepare a provider account, make it the default provider and say what
+    /// start will do; safe to run again
+    Setup {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Boot a VM, record it, provision it with each profile, print its id
-    Boot {
+    /// Create the VM, or resume it when its name is recorded, apply each
+    /// profile, then open a shell on it; safe to run again
+    Start {
         /// 1 to 63 lowercase letters, digits or hyphens
         name: String,
+        /// Print the VM's id instead of opening a shell on it, as scripts need
+        #[arg(short, long)]
+        detach: bool,
         /// Profile to apply once the VM answers; repeat it to apply several in order
         #[arg(long = "profile", value_name = "PROFILE")]
         profiles: Vec<String>,
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Stop a recorded VM on the provider that booted it; it stays recorded
-    Close { id: String },
+    /// Stop a recorded VM on the provider that created it; it stays recorded
+    Stop {
+        /// The VM's name, or its id
+        vm: String,
+    },
     /// Delete a recorded VM and its data for good, then its record
-    Remove { id: String },
+    Remove {
+        /// The VM's name, or its id
+        vm: String,
+    },
+    /// Print each recorded VM: its name, its id and its provider
+    #[command(visible_alias = "ls")]
+    List,
 }
 
 #[derive(Args)]
 struct ProviderArgs {
-    /// Provider to use, such as boat
+    /// Provider to use, such as boat [default: the one `workspace setup` chose]
     #[arg(long)]
-    provider: String,
+    provider: Option<String>,
     #[command(flatten)]
     options: Providers,
 }
@@ -66,62 +80,20 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Command, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
-    let file = config::load(config)?;
+fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let file = || config::load(config_path);
     match command {
-        Command::Onboard { provider } => onboard(provider, file),
-        Command::Boot {
+        Command::Setup { provider } => commands::setup(provider, file()?, config_path),
+        Command::Start {
             name,
+            detach,
             profiles,
             provider,
-        } => boot(&name, provider, file, &profiles),
-        Command::Close { id } => close(&VmId::from(id), file),
-        Command::Remove { id } => remove(&VmId::from(id), file),
+        } => commands::start(&name, provider, file()?, &profiles, detach),
+        Command::Stop { vm } => commands::stop(&vm, file()?.providers),
+        Command::Remove { vm } => commands::remove(&vm, file()?.providers),
+        Command::List => commands::list(),
     }
-}
-
-fn onboard(args: ProviderArgs, file: Providers) -> Result<(), Box<dyn Error>> {
-    let ProviderArgs { provider, options } = args;
-    let provider = adapters::provider(&provider, options.or(file))?;
-    let summary = lifecycle::onboard(provider.as_ref())?;
-    println!("{summary}");
-    Ok(())
-}
-
-fn boot(
-    name: &str,
-    args: ProviderArgs,
-    file: Providers,
-    profile_names: &[String],
-) -> Result<(), Box<dyn Error>> {
-    let ProviderArgs {
-        provider: provider_name,
-        options,
-    } = args;
-    let spec = VmSpec::new(name)?;
-    let provider = adapters::provider(&provider_name, options.or(file))?;
-    let profiles = profile_names
-        .iter()
-        .map(|profile| adapters::profile(profile))
-        .collect::<Result<Vec<_>, _>>()?;
-    let ledger = FileLedger::for_provider(&provider_name)?;
-    let vm = lifecycle::boot(provider.as_ref(), &ledger, &profiles, &spec)?;
-    println!("{vm}");
-    Ok(())
-}
-
-fn close(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
-    let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider(), file)?;
-    lifecycle::close(provider.as_ref(), vm)?;
-    Ok(())
-}
-
-fn remove(vm: &VmId, file: Providers) -> Result<(), Box<dyn Error>> {
-    let ledger = FileLedger::find(vm)?;
-    let provider = adapters::provider(ledger.provider(), file)?;
-    lifecycle::remove(provider.as_ref(), &ledger, vm)?;
-    Ok(())
 }
 
 fn report(error: &dyn Error) {

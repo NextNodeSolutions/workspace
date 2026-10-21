@@ -19,7 +19,7 @@ const DEFAULT_MACHINE_TYPE: MachineType = MachineType::Small;
 
 const DEFAULT_TTL: Ttl = Ttl(8 * SECONDS_PER_HOUR);
 
-const DEFAULT_ENVIRONMENT: &str = "workspace";
+const DEFAULT_ENVIRONMENT: &str = "main";
 
 #[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Boat")]
@@ -30,13 +30,13 @@ pub struct Options {
     #[serde(rename = "type")]
     machine_type: Option<MachineType>,
 
-    /// How long after boot Boat stops the sandbox, even mid-work, such as
+    /// How long after it starts Boat stops the sandbox, even mid-work, such as
     /// 8h or 90m [default: 8h]
     #[arg(long = "boat-ttl", value_name = "DURATION")]
     ttl: Option<Ttl>,
 
-    /// Boat environment the sandboxes start from, which onboard sets up
-    /// [default: workspace]
+    /// Boat environment the sandboxes start from, which setup prepares
+    /// [default: main]
     #[arg(long = "boat-environment", value_name = "NAME")]
     environment: Option<EnvironmentName>,
 }
@@ -139,7 +139,7 @@ impl fmt::Display for Ttl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (name, unit) = UNITS
             .iter()
-            .find(|(_, unit)| self.0 % unit == 0)
+            .find(|(_, unit)| self.0.is_multiple_of(*unit))
             .expect("every count of seconds divides by one second");
         write!(formatter, "{}{name}", self.0 / unit)
     }
