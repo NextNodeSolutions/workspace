@@ -14,6 +14,10 @@ use crate::process;
 const NEW: &str = "new";
 const RESUME: &str = "resume";
 
+/// How long a resumed sandbox may still read as stopped once Boat accepted
+/// the resume. Boat answers within seconds, so past this the resume stalled.
+const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Without it, `boat resume` waits until the sandbox is ready. `shell` does
 /// that wait instead, within its own time limit, as after `boat new`.
 const NO_WAIT: &str = "--no-wait";
@@ -33,6 +37,10 @@ impl State {
     /// Whether the sandbox runs, or is on its way to running.
     pub(crate) fn is_running(&self) -> bool {
         matches!(self, Self::Up | Self::Starting)
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        *self == Self::Stopped
     }
 
     pub(crate) fn is_starting(&self) -> bool {
@@ -150,15 +158,14 @@ fn sandbox_id(line: &str) -> Option<String> {
     event.id
 }
 
-pub(crate) fn resume(id: &str) -> Result<(), BoatError> {
-    let refusal = match cli::run(RESUME, &[id, NO_WAIT]) {
-        Err(error) if error.is_refusal() => error,
-        outcome => return outcome.map(drop),
-    };
-    if read(id)?.is_running() {
-        return Ok(());
+pub(crate) fn resume(id: &str, options: &[&str]) -> Result<(), BoatError> {
+    let mut args = vec![id, NO_WAIT];
+    args.extend_from_slice(options);
+    match cli::run(RESUME, &args) {
+        Ok(_) => wait_while(id, ACCEPT_TIMEOUT, State::is_stopped).map(drop),
+        Err(refusal) if refusal.is_refusal() => read(id)?.is_running().then_some(()).ok_or(refusal),
+        Err(error) => Err(error),
     }
-    Err(refusal)
 }
 
 pub(crate) fn wait_while(

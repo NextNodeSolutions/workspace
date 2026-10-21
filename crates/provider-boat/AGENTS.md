@@ -15,7 +15,7 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 
 - **Return the id first.** `create` returns the id from the first line of `boat new` that carries one, and lets `boat new` finish in the background. Never wait for readiness inside `create`: nothing records the sandbox until the id comes back.
 - **Fold states, never panic on them.** Boat's state names map onto the adapter's few states. A name the adapter does not know falls into the error-or-unknown state, and operations treat that state as a failure.
-- **Resume returns once accepted.** `boat resume` runs with `--no-wait`, so the call stays within its time limit, and `shell` then waits for the sandbox as after a create. A sandbox that is still stopping is waited for first, since Boat resumes only a stopped one, and a running one needs nothing.
+- **Resume returns once accepted.** A sandbox that is still stopping is waited for first, since Boat resumes only a stopped one, and a running one needs nothing. `boat resume` runs with `--no-wait`, so the call stays within its time limit, and `shell` then waits for the sandbox as after a create. Boat may report the old stopped state for a moment after it accepts, so the adapter waits that out too.
 - **A session ends when the person leaves it.** `attach` has no time limit, and its exit status is that of the last command typed in it, so only a `boat` that cannot run is an error.
 - **Stop and delete can be repeated.** Boat refuses to stop a sandbox that is already stopped or gone, so `stop` reads the state after `boat stop`, and that refusal counts as success. `remove` treats not found as success.
 - **Scripts go over ssh, as one argument.** `boat exec` takes no stdin, and Boat stores the command and output of every exec, so secrets could end up stored there. `boat ssh` quotes each argument for the remote shell, so the script travels as a single argument to bash. `boat ssh` exits the same way for a failed script and for a refused request, and the code on its last line tells them apart.
@@ -23,7 +23,7 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 ## Account and environment
 
 - **Least privilege.** Sandboxes start from workspace's own environment, which passes only the sandbox's own boat key. A sandbox needs that key to stop itself, and the key reaches nothing else. Do not turn on GitHub access, secrets or agent logins there. A profile that needs a credential passes it on stdin.
-- **Check before creating.** `create` reads the environment's effective toggles, and refuses to create a sandbox unless they match exactly. A hand edit to the environment therefore cannot give sandboxes more than intended.
+- **Check before every start.** `create` and `resume` read the environment's effective toggles, and refuse unless they match exactly. A hand edit to the environment therefore cannot give sandboxes more than intended. `resume` also pins the sandbox to that environment, since a stopped sandbox otherwise picks up whatever an upgrade gave its old version.
 - **Setup owns only its environment.** It creates the environment when it is missing, and sets the toggles only when they differ, since each change creates a version. Then it reads the result back. It never touches the account's default environment.
 
 ## Options

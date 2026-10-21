@@ -36,6 +36,20 @@ impl Boat {
             settings: options.resolve(),
         }
     }
+
+    /// The sandbox resumes on the configured environment, checked first as
+    /// before a create. Re-pinning it there means it gets the version just
+    /// checked, even after someone upgraded what its old version points to.
+    /// The configured TTL starts again from now.
+    fn resume_stopped(&self, vm: &VmId) -> Result<(), BoatError> {
+        let Settings {
+            ttl, environment, ..
+        } = &self.settings;
+        environment::check(environment)?;
+        let ttl = ttl.seconds().to_string();
+        let args = ["--ttl", &ttl, "--environment", environment.as_str()];
+        sandbox::resume(vm.as_str(), &args)
+    }
 }
 
 impl Provider for Boat {
@@ -69,7 +83,7 @@ impl Provider for Boat {
     fn resume(&self, vm: &VmId) -> Result<(), Cause> {
         let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
         match state {
-            State::Stopped => Ok(sandbox::resume(vm.as_str())?),
+            State::Stopped => Ok(self.resume_stopped(vm)?),
             State::Gone => Err(BoatError::Gone.into()),
             state if state.is_running() => Ok(()),
             state => Err(BoatError::NotResumable { state }.into()),

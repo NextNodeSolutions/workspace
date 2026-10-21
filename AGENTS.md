@@ -10,7 +10,7 @@ These come first. A change that weakens one is wrong, even when it compiles.
 2. **Every command can be repeated.** Setup, profiles, start, stop and remove are safe to run again. Something already done counts as success, such as starting a running VM, stopping a stopped VM or removing a deleted one.
 3. **A record never disappears before its VM.** `stop` keeps the record. `remove` deletes it only after the provider confirms the VM is gone.
 4. **Secrets travel on stdin.** They never appear in a script, a command argument, a log or an error message.
-5. **A VM gets the least it needs from the account.** Provider accounts hold credentials. An adapter passes a VM only what it needs, and checks that before creating one.
+5. **A VM gets the least it needs from the account.** Provider accounts hold credentials. An adapter passes a VM only what it needs, and checks that before a VM starts, whether it is created or resumed.
 6. **Shared account resources stay untouched.** Setup creates and owns what it needs. It never changes what other tools or people on the account rely on, such as a default environment.
 
 ## Architecture rules

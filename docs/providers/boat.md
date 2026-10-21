@@ -15,7 +15,7 @@ On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapt
 | `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h`. The timer starts again on each resume. |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
 
-`workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type.
+`workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type. The machine type is chosen when `start` creates a sandbox. The TTL and the environment also apply each time `start` resumes one.
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
@@ -147,8 +147,13 @@ sequenceDiagram
     alt Up or Starting
         A-->>Core: done, since it runs
     else Stopped
-        A->>B: boat resume --no-wait
+        A->>B: boat env list
+        Note over A,B: stops unless the environment is set up
+        A->>B: boat resume --no-wait, with the TTL and the environment
         alt Boat accepted
+            loop while it still reads as Stopped, within a time limit
+                A->>B: boat info
+            end
             A-->>Core: done
         else Boat refused
             A->>B: boat info
@@ -161,7 +166,9 @@ sequenceDiagram
     Note over A,B: waits for Up, as after create
 ```
 
-Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. The sandbox keeps its machine type and environment. A gone sandbox cannot come back: its error says that `workspace remove` forgets the record.
+Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. Boat may still report the sandbox as stopped for a moment after it accepts, so the adapter waits for that to pass first.
+
+A resumed sandbox gets what its environment holds at that moment, so the adapter checks the environment first, as before a create. It then pins the sandbox to that environment, so the sandbox gets the version just checked, even if someone upgraded the environment while the sandbox was stopped. The sandbox keeps its machine type, and its TTL starts again from the resume. A gone sandbox cannot come back: its error says that `workspace remove` forgets the record.
 
 ### `attach`
 

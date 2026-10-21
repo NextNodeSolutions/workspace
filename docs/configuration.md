@@ -1,6 +1,6 @@
 # Configuration
 
-Providers take options, such as a machine type, which shape the VMs that `start` creates. A resumed VM keeps what it was created with. You set an option with a flag, in the config file, or not at all.
+Providers take options, such as a machine type. You set an option with a flag, in the config file, or not at all. Each provider's page says which options apply when `start` resumes a VM rather than create one.
 
 ## Which value wins
 

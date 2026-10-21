@@ -102,7 +102,7 @@ sequenceDiagram
 
 The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
 
-A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options, such as the machine type, shape only the VMs that `start` creates.
+A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options apply when `start` creates a VM, and each provider's page says which ones also apply when it resumes one.
 
 Without `-d`, `start` ends by handing your terminal to a shell on the VM. Leaving the shell leaves the VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
 
