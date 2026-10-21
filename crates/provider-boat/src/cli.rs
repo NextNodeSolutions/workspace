@@ -15,23 +15,21 @@ const NO_UPDATE: &str = "--no-update";
 pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(crate) fn command(subcommand: &'static str, args: &[&str]) -> Command {
-    let mut command = Command::new(PROGRAM);
-    command
-        .args(subcommand.split(' '))
-        .args([JSON, NO_UPDATE])
-        .args(args);
-    command
+    boat(subcommand, &[JSON, NO_UPDATE], args)
 }
 
 /// `boat <subcommand> <args>` for a person at the terminal. It skips the
 /// update check but keeps boat's own output, since that output is the
 /// session the person asked for.
 pub(crate) fn interactive(subcommand: &'static str, args: &[&str]) -> Command {
+    boat(subcommand, &[NO_UPDATE], args)
+}
+
+/// `boat <subcommand> <flags> <args>`. The subcommand may hold several
+/// words, such as `env list`.
+fn boat(subcommand: &'static str, flags: &[&str], args: &[&str]) -> Command {
     let mut command = Command::new(PROGRAM);
-    command
-        .args(subcommand.split(' '))
-        .arg(NO_UPDATE)
-        .args(args);
+    command.args(subcommand.split(' ')).args(flags).args(args);
     command
 }
 
