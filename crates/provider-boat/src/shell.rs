@@ -25,11 +25,6 @@ impl BoatShell {
     }
 }
 
-/// Runs `boat ssh <id>` on the user's terminal. There is no timeout: the
-/// session lasts as long as the person wants. Its exit status is that of the
-/// last command typed in it, and Boat's own refusals exit the same way, so
-/// after a failure the state decides: a sandbox that no longer runs had no
-/// session to give.
 pub(crate) fn attach(vm: &VmId) -> Result<(), BoatError> {
     let status = cli::interactive(SSH, &[vm.as_str()])
         .status()

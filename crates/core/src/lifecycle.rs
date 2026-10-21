@@ -70,7 +70,6 @@ pub fn remove(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result
     })
 }
 
-/// Creates a VM and records it at once, before anything waits on it.
 fn create(provider: &dyn Provider, ledger: &dyn Ledger, spec: &VmSpec) -> Result<VmId, Error> {
     let vm = provider.create(spec).map_err(|cause| Error::Create {
         name: spec.name().to_owned(),

@@ -17,7 +17,6 @@ const PROVIDER_KEY: &str = "provider";
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// The provider a command runs on when `--provider` is not given.
     pub provider: Option<String>,
     #[serde(default)]
     pub providers: Providers,
@@ -70,14 +69,6 @@ pub fn load(path: Option<&Path>) -> Result<Config, ConfigError> {
     toml::from_str(&text).map_err(|source| ConfigError::Invalid { path, source })
 }
 
-/// Makes `provider` the default provider in the file at `path`, or else in
-/// the default file, and returns that file's path. The file is created when
-/// it is missing. The rest of it, comments included, stays as it was, since
-/// people edit it by hand.
-///
-/// # Errors
-///
-/// When the file cannot be read, parsed or written.
 pub fn remember_provider(path: Option<&Path>, provider: &str) -> Result<PathBuf, ConfigError> {
     let path = resolve(path).ok_or(ConfigError::NoConfigDirectory)?;
     let text = read(&path, false)?.unwrap_or_default();
@@ -93,7 +84,6 @@ pub fn remember_provider(path: Option<&Path>, provider: &str) -> Result<PathBuf,
     Ok(path)
 }
 
-/// `path`, or else the default file. `None` when there is neither.
 fn resolve(path: Option<&Path>) -> Option<PathBuf> {
     path.map(Path::to_owned).or_else(default_path)
 }
@@ -103,8 +93,6 @@ fn default_path() -> Option<PathBuf> {
     Some(config_home.join(CONFIG_FILE))
 }
 
-/// The text of the file at `path`, or `None` when it is missing and not
-/// required.
 fn read(path: &Path, is_required: bool) -> Result<Option<String>, FileError> {
     if is_required {
         return fs::read_to_string(path)
@@ -114,8 +102,6 @@ fn read(path: &Path, is_required: bool) -> Result<Option<String>, FileError> {
     files::read_if_exists(path)
 }
 
-/// Writes in place, so the file keeps its permissions, and a symbolic link,
-/// such as a dotfile manager sets up, stays a link to the file it names.
 fn write(path: &Path, text: &str) -> Result<(), FileError> {
     if let Some(directory) = path.parent() {
         fs::create_dir_all(directory).map_err(files::io_error("create", directory))?;

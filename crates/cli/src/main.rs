@@ -92,7 +92,6 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
         } => commands::start(&name, provider, file()?, &profiles, detach),
         Command::Stop { vm } => commands::stop(&vm, file()?.providers),
         Command::Remove { vm } => commands::remove(&vm, file()?.providers),
-        // It builds no provider, so a broken config file never hides the VMs.
         Command::List => commands::list(),
     }
 }

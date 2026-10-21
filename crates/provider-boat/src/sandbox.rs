@@ -14,12 +14,10 @@ use crate::process;
 const NEW: &str = "new";
 const RESUME: &str = "resume";
 
-/// How long a resumed sandbox may still read as stopped once Boat accepted
-/// the resume. Boat answers within seconds, so past this the resume stalled.
+/// Boat answers within seconds, so a resume that still reads as stopped past
+/// this has stalled.
 const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Without it, `boat resume` waits until the sandbox is ready. `shell` does
-/// that wait instead, within its own time limit, as after `boat new`.
 const NO_WAIT: &str = "--no-wait";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -34,7 +32,6 @@ pub(crate) enum State {
 }
 
 impl State {
-    /// Whether the sandbox runs, or is on its way to running.
     pub(crate) fn is_running(&self) -> bool {
         matches!(self, Self::Up | Self::Starting)
     }

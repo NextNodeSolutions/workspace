@@ -37,9 +37,6 @@ impl Boat {
         }
     }
 
-    /// The flags every start takes, create and resume alike: the configured
-    /// TTL, which starts from now, and the configured environment, once
-    /// checked, so no start skips the check.
     fn start_flags(&self) -> Result<[String; 4], BoatError> {
         let Settings {
             ttl, environment, ..
@@ -68,11 +65,6 @@ impl Provider for Boat {
         Ok(VmId::from(id))
     }
 
-    /// Boat resumes only a stopped sandbox, so one that is still stopping is
-    /// waited for first. A running one needs nothing. A stopped one resumes
-    /// on the configured environment, checked first as before a create.
-    /// Re-pinning it there means it gets the version just checked, even after
-    /// someone upgraded what its old version points to.
     fn resume(&self, vm: &VmId) -> Result<(), Cause> {
         let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
         match state {

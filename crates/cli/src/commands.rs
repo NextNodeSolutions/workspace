@@ -1,6 +1,3 @@
-//! What each command does once the command line is read: it builds the
-//! adapters, calls the core and prints the result.
-
 use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::Path;
@@ -12,20 +9,16 @@ use crate::adapters;
 use crate::config::{self, Config, Providers};
 use crate::ledger::{self, FileLedger, Record};
 
-/// Separates the columns that `list` prints.
 const COLUMN_GAP: &str = "  ";
 
-/// `start` would open a shell, but nobody is at a terminal to use it.
 #[derive(Debug, thiserror::Error)]
 #[error("no terminal to open a shell in: pass -d to start the VM without one")]
 struct NoTerminal;
 
-/// No provider was named, and setup made none the default.
 #[derive(Debug, thiserror::Error)]
 #[error("no provider chosen: run `workspace setup`, or pass --provider")]
 struct NotSetUp;
 
-/// `--provider` names another provider than the one a recorded VM runs on.
 #[derive(Debug, thiserror::Error)]
 #[error("`{name}` runs on {recorded}, not {asked}: drop --provider, or pick another name")]
 struct OtherProvider {
@@ -34,8 +27,6 @@ struct OtherProvider {
     asked: String,
 }
 
-/// Prepares the provider, then remembers it as the default, so a provider
-/// that is not ready never becomes the default.
 pub fn setup(
     args: ProviderArgs,
     file: Config,
@@ -48,8 +39,8 @@ pub fn setup(
     };
     let provider = adapters::provider(&name, options.or(file.providers))?;
     let summary = lifecycle::setup(provider.as_ref())?;
-    // Printed first, so that a config file that cannot be written still
-    // leaves on screen what setup changed on the account.
+    // Printed first, so a config file that cannot be written still leaves on
+    // screen what changed.
     println!("{summary}");
     let path = config::remember_provider(config_path, &name)?;
     println!(
@@ -59,9 +50,6 @@ pub fn setup(
     Ok(())
 }
 
-/// A recorded VM runs on the provider that created it, so its record picks
-/// the provider. A new VM runs on the default one. Without a terminal for
-/// the shell, it fails before it creates anything.
 pub fn start(
     name: &str,
     args: ProviderArgs,
@@ -89,14 +77,10 @@ pub fn start(
         return Ok(());
     }
     lifecycle::attach(provider.as_ref(), &vm)?;
-    // The VM costs money until it stops, so leaving the shell says so.
     eprintln!("{name} is still running: `workspace stop {name}` stops it.");
     Ok(())
 }
 
-/// The provider the VM named `name` runs on, with its id when it is
-/// recorded: the provider its record names, or else the `asked` one, or else
-/// the `default` one.
 fn pick_provider(
     name: &str,
     recorded: Option<Record>,
@@ -130,7 +114,6 @@ pub fn remove(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// One line per VM, in aligned columns.
 pub fn list() -> Result<(), Box<dyn Error>> {
     let records = ledger::records()?;
     let name_width = records.iter().map(|record| record.name.len()).max();

@@ -12,8 +12,8 @@ const DEFAULT_DATA_HOME: &str = ".local/share";
 const PROVIDER_FIELD: &str = "provider=";
 const NAME_FIELD: &str = "name=";
 
-/// Starts the name of a file that is not a record, such as one being
-/// written. A record never starts with it, since its id cannot.
+/// No record's name starts with it, so a file still being written is never
+/// read as a record.
 const HIDDEN_PREFIX: char = '.';
 
 pub struct FileLedger {
@@ -21,7 +21,6 @@ pub struct FileLedger {
     provider: String,
 }
 
-/// A VM as its record describes it.
 pub struct Record {
     pub id: VmId,
     pub provider: String,
@@ -81,7 +80,6 @@ impl Ledger for FileLedger {
     }
 }
 
-/// Every record, sorted by name, then by id.
 pub fn records() -> Result<Vec<Record>, LedgerError> {
     let directory = records_directory()?;
     let entries = match fs::read_dir(&directory) {
@@ -104,7 +102,6 @@ pub fn records() -> Result<Vec<Record>, LedgerError> {
     Ok(records)
 }
 
-/// The record of the VM that `handle` names: its id, or else its name.
 pub fn find(handle: &str) -> Result<Record, LedgerError> {
     let directory = records_directory()?;
     if let Some(record) = read_record(&directory, &VmId::from(handle.to_owned()))? {
@@ -113,7 +110,6 @@ pub fn find(handle: &str) -> Result<Record, LedgerError> {
     named(handle)?.ok_or_else(|| LedgerError::Unknown(handle.to_owned()))
 }
 
-/// The record of the VM named `name`, when one is recorded.
 pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
     let mut matches: Vec<Record> = records()?
         .into_iter()
@@ -145,7 +141,6 @@ fn record_path(directory: &Path, vm: &VmId) -> Result<PathBuf, LedgerError> {
     Ok(directory.join(id))
 }
 
-/// The record of `vm`, or `None` when it has none.
 fn read_record(directory: &Path, vm: &VmId) -> Result<Option<Record>, LedgerError> {
     let path = record_path(directory, vm)?;
     let Some(text) = files::read_if_exists(&path)? else {
