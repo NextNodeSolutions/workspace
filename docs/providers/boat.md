@@ -186,7 +186,7 @@ sequenceDiagram
     B-->>A: exits, and the sandbox keeps running
 ```
 
-`boat ssh` runs without `--json` here, since its output is the session you read. It has no time limit, since the session lasts as long as you want. Its exit status is that of the last command typed in the session, so it does not count as a failure: only a `boat` that cannot run is an error.
+`boat ssh` runs without `--json` here, since its output is the session you read. It has no time limit, since the session lasts as long as you want. Its exit status is that of the last command typed in the session, and Boat's own refusals exit the same way. After a non-zero exit, the adapter therefore reads the state back: a sandbox that still runs means the session ended normally, and one that no longer runs means there was no session to give.
 
 ### `Shell::run`, used by profiles
 
@@ -277,5 +277,5 @@ stateDiagram-v2
 - **Time limit.** A call that only talks to the Boat API gets one, since it should answer within seconds. `boat ssh` gets none.
 - **Refused** means the Boat API said no, and its code drives decisions. For example, a not-found code means the sandbox is gone, which `stop` and `remove` treat as success.
 - **Failed** carries the message from boat's last line, or its stderr when there is no such line.
-- **Stalled.** After a kill, the threads reading the pipes are left behind, so a leftover child process that holds a pipe open cannot delay the error.
+- **Stalled.** After a kill, the threads reading the pipes are left behind, so a leftover child process that holds a pipe open cannot delay the error. Boat may still carry out a request it never answered, and the error says so.
 - **Too much output.** Past the limit, the rest of a stream is read and dropped, so the command never blocks on a full pipe.

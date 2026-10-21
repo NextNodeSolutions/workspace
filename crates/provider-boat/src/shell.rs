@@ -5,7 +5,7 @@ use workspace_core::{Cause, VmId};
 
 use crate::cli::{self, Failure};
 use crate::error::BoatError;
-use crate::process;
+use crate::{process, sandbox};
 
 const SSH: &str = "ssh";
 
@@ -27,13 +27,21 @@ impl BoatShell {
 
 /// Runs `boat ssh <id>` on the user's terminal. There is no timeout: the
 /// session lasts as long as the person wants. Its exit status is that of the
-/// last command typed in it, not a sign that it failed, so only a failure to
-/// run `boat` is an error.
+/// last command typed in it, and Boat's own refusals exit the same way, so
+/// after a failure the state decides: a sandbox that no longer runs had no
+/// session to give.
 pub(crate) fn attach(vm: &VmId) -> Result<(), BoatError> {
-    cli::interactive(SSH, &[vm.as_str()])
+    let status = cli::interactive(SSH, &[vm.as_str()])
         .status()
         .map_err(BoatError::Spawn)?;
-    Ok(())
+    if status.success() {
+        return Ok(());
+    }
+    let state = sandbox::read(vm.as_str())?;
+    if state.is_running() {
+        return Ok(());
+    }
+    Err(BoatError::NotRunning { state })
 }
 
 impl Shell for BoatShell {

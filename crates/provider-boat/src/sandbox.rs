@@ -189,7 +189,7 @@ pub(crate) fn wait_while(
     }
 }
 
-fn read(id: &str) -> Result<State, BoatError> {
+pub(crate) fn read(id: &str) -> Result<State, BoatError> {
     match cli::call::<Info>("info", &[id]) {
         Ok(info) => Ok(State::from_boat(info.sandbox.state)),
         Err(error) if error.is_gone() => Ok(State::Gone),

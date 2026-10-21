@@ -13,8 +13,9 @@ pub trait Provider {
 
     /// # Errors
     ///
-    /// When the VM cannot run again, for example because the provider no
-    /// longer has it. The VM is left as it was.
+    /// When the VM may not run again, for example because the provider no
+    /// longer has it. A request the provider never answered may still start
+    /// the VM.
     fn resume(&self, vm: &VmId) -> Result<(), Cause>;
 
     /// # Errors
@@ -24,7 +25,8 @@ pub trait Provider {
 
     /// # Errors
     ///
-    /// When no session could be opened. The VM is left as it was.
+    /// When no session could be opened, for example because the VM stopped.
+    /// The VM is left as it was.
     fn attach(&self, vm: &VmId) -> Result<(), Cause>;
 
     /// # Errors

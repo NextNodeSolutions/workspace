@@ -32,7 +32,9 @@ pub(crate) enum BoatError {
         source: serde_json::Error,
     },
 
-    #[error("`boat {subcommand}` did not finish within {seconds} s, so it was killed")]
+    #[error(
+        "`boat {subcommand}` did not finish within {seconds} s, so it was killed, though Boat may still carry it out"
+    )]
     Stalled {
         subcommand: &'static str,
         seconds: u64,
