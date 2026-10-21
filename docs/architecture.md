@@ -71,6 +71,7 @@ sequenceDiagram
     participant Pr as Profiles
     participant S as Shell
     You->>CLI: workspace start NAME
+    CLI->>CLI: lock NAME, waiting while another start holds it
     CLI->>L: find the record named NAME
     CLI->>CLI: build its provider, or else the default one, and the profiles
     CLI->>Core: start
@@ -90,6 +91,7 @@ sequenceDiagram
         Pr->>S: run(script, stdin)
     end
     Core-->>CLI: VM id
+    CLI->>CLI: unlock NAME
     alt with -d
         CLI-->>You: prints the VM id
     else without -d
@@ -102,7 +104,7 @@ sequenceDiagram
 
 The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
 
-A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options apply when `start` creates a VM, and each provider's page says which ones also apply when it resumes one. `--provider` cannot move a recorded VM: naming another provider than its record's is an error.
+A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Two starts of one name at the same moment do not create two VMs either: the second waits until the first has recorded its VM and applied its profiles, then resumes that VM. The lock lasts only as long as the process that holds it, so an interrupted start never blocks the next one. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options apply when `start` creates a VM, and each provider's page says which ones also apply when it resumes one. `--provider` cannot move a recorded VM: naming another provider than its record's is an error.
 
 Without `-d`, `start` ends by handing your terminal to a shell on the VM. Leaving the shell leaves the VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
 

@@ -139,7 +139,7 @@ impl fmt::Display for Ttl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (name, unit) = UNITS
             .iter()
-            .find(|(_, unit)| self.0 % unit == 0)
+            .find(|(_, unit)| self.0.is_multiple_of(*unit))
             .expect("every count of seconds divides by one second");
         write!(formatter, "{}{name}", self.0 / unit)
     }

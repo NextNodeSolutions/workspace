@@ -1,5 +1,6 @@
+use std::fs::{self, File, TryLockError};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::{fs, io};
 
 use workspace_core::port::Ledger;
 use workspace_core::{Cause, VmId, VmSpec};
@@ -11,6 +12,7 @@ const RECORDS_DIRECTORY: &str = "workspace/vms";
 const DEFAULT_DATA_HOME: &str = ".local/share";
 const PROVIDER_FIELD: &str = "provider=";
 const NAME_FIELD: &str = "name=";
+const LOCK_SUFFIX: &str = ".lock";
 
 /// No record's name starts with it, so a file still being written is never
 /// read as a record.
@@ -19,6 +21,11 @@ const HIDDEN_PREFIX: char = '.';
 pub struct FileLedger {
     directory: PathBuf,
     provider: String,
+}
+
+#[must_use = "the name stays locked only while this lives"]
+pub struct NameLock {
+    _file: File,
 }
 
 pub struct Record {
@@ -78,6 +85,26 @@ impl Ledger for FileLedger {
             _ => Ok(()),
         }
     }
+}
+
+pub fn lock_name(name: &str, on_wait: impl FnOnce()) -> Result<NameLock, LedgerError> {
+    let directory = records_directory()?;
+    fs::create_dir_all(&directory).map_err(files::io_error("create", &directory))?;
+    let path = directory.join(format!("{HIDDEN_PREFIX}{name}{LOCK_SUFFIX}"));
+    let file = File::options()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(files::io_error("open", &path))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            on_wait();
+            file.lock().map_err(files::io_error("lock", &path))?;
+        }
+        Err(TryLockError::Error(error)) => return Err(files::io_error("lock", &path)(error).into()),
+    }
+    Ok(NameLock { _file: file })
 }
 
 pub fn records() -> Result<Vec<Record>, LedgerError> {

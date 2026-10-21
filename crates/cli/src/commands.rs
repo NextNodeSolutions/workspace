@@ -62,6 +62,9 @@ pub fn start(
         return Err(NoTerminal.into());
     }
     let spec = VmSpec::new(name)?;
+    let lock = ledger::lock_name(spec.name(), || {
+        eprintln!("Another `workspace start {name}` is running: waiting for it to finish.");
+    })?;
     let recorded = ledger::named(spec.name())?;
     let ProviderArgs { provider, options } = args;
     let (provider_name, recorded) = pick_provider(spec.name(), recorded, provider, file.provider)?;
@@ -72,6 +75,7 @@ pub fn start(
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
     let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
+    drop(lock);
     if detach {
         println!("{vm}");
         return Ok(());
