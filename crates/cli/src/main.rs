@@ -69,6 +69,14 @@ enum Command {
 #[error("no terminal to open a shell in: pass -d to start the VM without one")]
 struct NoTerminal;
 
+#[derive(Debug, thiserror::Error)]
+#[error("`{name}` runs on {recorded}, not {asked}: drop --provider, or pick another name")]
+struct OtherProvider {
+    name: String,
+    recorded: String,
+    asked: String,
+}
+
 #[derive(Args)]
 struct ProviderArgs {
     /// Provider to use, such as boat [default: the one `workspace setup` chose]
@@ -146,9 +154,17 @@ fn start(
     let spec = VmSpec::new(name)?;
     let recorded = ledger::named(spec.name())?;
     let ProviderArgs { provider, options } = args;
-    let provider_name = match &recorded {
-        Some(record) => record.provider.clone(),
-        None => provider.or(file.provider).ok_or(NoProvider::NotSetUp)?,
+    let provider_name = match (&recorded, provider) {
+        (Some(record), Some(asked)) if asked != record.provider => {
+            return Err(OtherProvider {
+                name: record.name.clone(),
+                recorded: record.provider.clone(),
+                asked,
+            }
+            .into());
+        }
+        (Some(record), _) => record.provider.clone(),
+        (None, provider) => provider.or(file.provider).ok_or(NoProvider::NotSetUp)?,
     };
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
     let profiles = profile_names
