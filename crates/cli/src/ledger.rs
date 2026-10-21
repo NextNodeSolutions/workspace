@@ -58,7 +58,6 @@ impl FileLedger {
 impl Ledger for FileLedger {
     fn record(&self, vm: &VmId, spec: &VmSpec) -> Result<(), Cause> {
         let path = record_path(&self.directory, vm)?;
-        // A leading dot never collides with a record: record names cannot start with one.
         let staging = self.directory.join(format!("{HIDDEN_PREFIX}{vm}.tmp"));
         let record = format!(
             "{PROVIDER_FIELD}{}\n{NAME_FIELD}{}\n",
