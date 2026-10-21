@@ -37,18 +37,20 @@ impl Boat {
         }
     }
 
-    /// The sandbox resumes on the configured environment, checked first as
-    /// before a create. Re-pinning it there means it gets the version just
-    /// checked, even after someone upgraded what its old version points to.
-    /// The configured TTL starts again from now.
-    fn resume_stopped(&self, vm: &VmId) -> Result<(), BoatError> {
+    /// The flags every start takes, create and resume alike: the configured
+    /// TTL, which starts from now, and the configured environment, once
+    /// checked, so no start skips the check.
+    fn start_flags(&self) -> Result<[String; 4], BoatError> {
         let Settings {
             ttl, environment, ..
         } = &self.settings;
         environment::check(environment)?;
-        let ttl = ttl.seconds().to_string();
-        let args = ["--ttl", &ttl, "--environment", environment.as_str()];
-        sandbox::resume(vm.as_str(), &args)
+        Ok([
+            "--ttl".to_owned(),
+            ttl.seconds().to_string(),
+            "--environment".to_owned(),
+            environment.as_str().to_owned(),
+        ])
     }
 }
 
@@ -59,31 +61,28 @@ impl Provider for Boat {
 
     /// Boat names sandboxes itself, so a VM's name lives only in its record.
     fn create(&self, _spec: &VmSpec) -> Result<VmId, Cause> {
-        let Settings {
-            machine_type,
-            ttl,
-            environment,
-        } = &self.settings;
-        environment::check(environment)?;
-        let ttl = ttl.seconds().to_string();
-        let args = [
-            "--type",
-            machine_type.as_str(),
-            "--ttl",
-            &ttl,
-            "--environment",
-            environment.as_str(),
-        ];
+        let flags = self.start_flags()?;
+        let mut args = vec!["--type", self.settings.machine_type.as_str()];
+        args.extend(flags.iter().map(String::as_str));
         let id = sandbox::create(&args)?;
         Ok(VmId::from(id))
     }
 
     /// Boat resumes only a stopped sandbox, so one that is still stopping is
-    /// waited for first. A running one needs nothing.
+    /// waited for first. A running one needs nothing. A stopped one resumes
+    /// on the configured environment, checked first as before a create.
+    /// Re-pinning it there means it gets the version just checked, even after
+    /// someone upgraded what its old version points to.
     fn resume(&self, vm: &VmId) -> Result<(), Cause> {
         let state = sandbox::wait_while(vm.as_str(), STOP_TIMEOUT, State::is_stopping)?;
         match state {
-            State::Stopped => Ok(self.resume_stopped(vm)?),
+            State::Stopped => {
+                let flags = self.start_flags()?;
+                Ok(sandbox::resume(
+                    vm.as_str(),
+                    &flags.each_ref().map(String::as_str),
+                )?)
+            }
             State::Gone => Err(BoatError::Gone.into()),
             state if state.is_running() => Ok(()),
             state => Err(BoatError::NotResumable { state }.into()),
