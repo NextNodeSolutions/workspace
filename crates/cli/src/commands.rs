@@ -5,12 +5,12 @@ use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::Path;
 
-use workspace_core::{VmSpec, lifecycle};
+use workspace_core::{VmId, VmSpec, lifecycle};
 
 use crate::ProviderArgs;
-use crate::adapters::{self, NoProvider};
+use crate::adapters;
 use crate::config::{self, Config, Providers};
-use crate::ledger::{self, FileLedger};
+use crate::ledger::{self, FileLedger, Record};
 
 /// Separates the columns that `list` prints.
 const COLUMN_GAP: &str = "  ";
@@ -19,6 +19,11 @@ const COLUMN_GAP: &str = "  ";
 #[derive(Debug, thiserror::Error)]
 #[error("no terminal to open a shell in: pass -d to start the VM without one")]
 struct NoTerminal;
+
+/// No provider was named, and setup made none the default.
+#[derive(Debug, thiserror::Error)]
+#[error("no provider chosen: run `workspace setup`, or pass --provider")]
+struct NotSetUp;
 
 /// `--provider` names another provider than the one a recorded VM runs on.
 #[derive(Debug, thiserror::Error)]
@@ -71,25 +76,13 @@ pub fn start(
     let spec = VmSpec::new(name)?;
     let recorded = ledger::named(spec.name())?;
     let ProviderArgs { provider, options } = args;
-    let provider_name = match (&recorded, provider) {
-        (Some(record), Some(asked)) if asked != record.provider => {
-            return Err(OtherProvider {
-                name: record.name.clone(),
-                recorded: record.provider.clone(),
-                asked,
-            }
-            .into());
-        }
-        (Some(record), _) => record.provider.clone(),
-        (None, provider) => provider.or(file.provider).ok_or(NoProvider::NotSetUp)?,
-    };
+    let (provider_name, recorded) = pick_provider(spec.name(), recorded, provider, file.provider)?;
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
     let profiles = profile_names
         .iter()
         .map(|profile| adapters::profile(profile))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
-    let recorded = recorded.map(|record| record.id);
     let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
     if detach {
         println!("{vm}");
@@ -99,6 +92,27 @@ pub fn start(
     // The VM costs money until it stops, so leaving the shell says so.
     eprintln!("{name} is still running: `workspace stop {name}` stops it.");
     Ok(())
+}
+
+/// The provider the VM named `name` runs on, with its id when it is
+/// recorded: the provider its record names, or else the `asked` one, or else
+/// the `default` one.
+fn pick_provider(
+    name: &str,
+    recorded: Option<Record>,
+    asked: Option<String>,
+    default: Option<String>,
+) -> Result<(String, Option<VmId>), Box<dyn Error>> {
+    match (recorded, asked) {
+        (Some(record), Some(asked)) if asked != record.provider => Err(OtherProvider {
+            name: name.to_owned(),
+            recorded: record.provider,
+            asked,
+        }
+        .into()),
+        (Some(record), _) => Ok((record.provider, Some(record.id))),
+        (None, asked) => Ok((asked.or(default).ok_or(NotSetUp)?, None)),
+    }
 }
 
 pub fn stop(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {

@@ -18,17 +18,15 @@ pub struct UnknownAdapter {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum NoProvider {
-    #[error("no provider chosen: run `workspace setup`, or pass --provider")]
-    NotSetUp,
-    #[error("several providers exist, so pick one with --provider: {available}")]
-    Several { available: String },
+#[error("several providers exist, so pick one with --provider: {available}")]
+pub struct SeveralProviders {
+    available: String,
 }
 
-pub fn sole_provider() -> Result<String, NoProvider> {
+pub fn sole_provider() -> Result<String, SeveralProviders> {
     match PROVIDERS {
         [(name, _)] => Ok((*name).to_owned()),
-        _ => Err(NoProvider::Several {
+        _ => Err(SeveralProviders {
             available: list_names(PROVIDERS),
         }),
     }
