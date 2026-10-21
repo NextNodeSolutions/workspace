@@ -57,9 +57,7 @@ pub(crate) enum BoatError {
         reason: String,
     },
 
-    #[error(
-        "the Boat environment `{name}` does not exist: `workspace setup --provider boat` creates it"
-    )]
+    #[error("the Boat environment `{name}` does not exist")]
     NoEnvironment { name: EnvironmentName },
 
     #[error(
@@ -67,9 +65,7 @@ pub(crate) enum BoatError {
     )]
     DefaultEnvironment { name: EnvironmentName },
 
-    #[error(
-        "the Boat environment `{name}` does not match what `workspace setup --provider boat` sets: {changed}"
-    )]
+    #[error("the Boat environment `{name}` no longer matches what setup sets: {changed}")]
     Mismatch {
         name: EnvironmentName,
         changed: String,
@@ -89,9 +85,7 @@ pub(crate) enum BoatError {
     #[error("the sandbox is {state}, so it cannot resume")]
     NotResumable { state: State },
 
-    #[error(
-        "Boat no longer has this sandbox, its disk included, so it cannot resume: `workspace remove` forgets its record"
-    )]
+    #[error("Boat no longer has this sandbox, its disk included")]
     Gone,
 
     #[error("the sandbox is {state}, so the stop did not finish")]

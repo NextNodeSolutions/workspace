@@ -2,7 +2,7 @@ use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::Path;
 
-use workspace_core::{VmId, VmSpec, lifecycle};
+use workspace_core::{Cause, Error as CoreError, VmId, VmSpec, lifecycle};
 
 use crate::ProviderArgs;
 use crate::adapters;
@@ -18,6 +18,25 @@ struct NoTerminal;
 #[derive(Debug, thiserror::Error)]
 #[error("no provider chosen: run `workspace setup`, or pass --provider")]
 struct NotSetUp;
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "{provider} is not ready to start VMs: run `workspace setup --provider {provider}`, with the same provider options as here"
+)]
+struct NeedsSetup {
+    provider: String,
+    #[source]
+    cause: Cause,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("`{name}` ({vm}) no longer exists on its provider: `workspace remove {name}` forgets it")]
+struct Vanished {
+    name: String,
+    vm: VmId,
+    #[source]
+    cause: Cause,
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -80,15 +99,34 @@ pub fn start(
         .map(|profile| adapters::profile(profile))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
-    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)?;
+    let with_next_step = |error| next_step(error, &provider_name, spec.name());
+    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)
+        .map_err(with_next_step)?;
     drop(lock);
     if detach {
         println!("{vm}");
         return Ok(());
     }
-    lifecycle::attach(provider.as_ref(), &vm)?;
+    lifecycle::attach(provider.as_ref(), &vm).map_err(with_next_step)?;
     eprintln!("{name} is still running: `workspace stop {name}` stops it.");
     Ok(())
+}
+
+fn next_step(error: CoreError, provider: &str, name: &str) -> Box<dyn Error> {
+    match error {
+        CoreError::Setup { cause } => NeedsSetup {
+            provider: provider.to_owned(),
+            cause,
+        }
+        .into(),
+        CoreError::Gone { vm, cause } => Vanished {
+            name: name.to_owned(),
+            vm,
+            cause,
+        }
+        .into(),
+        error => error.into(),
+    }
 }
 
 fn pick_provider(

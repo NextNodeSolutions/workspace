@@ -38,7 +38,7 @@ pub(crate) fn run(settings: &Settings) -> Result<String, BoatError> {
     check_machine_type(settings.machine_type)?;
     let change = environment::ensure(&settings.environment)?;
     Ok(format!(
-        "Boat is ready: `workspace start` creates {} sandboxes, which Boat stops {} after they start.\n\
+        "Boat is ready: new sandboxes are {}, and Boat stops each one {} after it starts.\n\
          They start from the Boat environment `{}` ({change}), which gives them their own boat key and nothing else from the account.",
         settings.machine_type, settings.ttl, settings.environment
     ))

@@ -9,7 +9,7 @@ This crate runs VMs as Boat sandboxes, through the `boat` CLI, which owns sign-i
 - **Read only what you use.** Boat's JSON is read into structs that hold only the fields the adapter uses, and every other field is ignored. Boat can then add fields freely. Never deny unknown fields on Boat's output, unlike the config file.
 - **Branch on codes and state, never on wording.** A refusal from the Boat API carries a code, and the adapter decides on that code: not found means gone, for example. When Boat gives no code, read the state back. That is why the adapter checks whether an environment exists by listing environments, not by parsing an error message.
 - **Fail fast on silence.** A call that got no answer at all, as opposed to a refusal, fails at once. Do not chain more calls to a CLI that just stalled.
-- **Keep Boat inside.** Nothing `boat` prints reaches the terminal, but the interactive shell that `attach` opens. Every failure becomes this crate's error, whose message names the `boat` command and says what to do next. Only the provider and its options are public.
+- **Keep Boat inside.** Nothing `boat` prints reaches the terminal, but the interactive shell that `attach` opens. Every failure becomes this crate's error, whose message says what failed in Boat's terms and, when the fix lies in Boat, what to run there, such as `boat login`. A message never names a workspace command: when the account needs setup or the sandbox is gone, the error's reason says so, and the cli says what to run. Only the provider and its options are public.
 
 ## Sandbox lifecycle
 
