@@ -1,6 +1,8 @@
 use std::io;
 use std::string::FromUtf8Error;
 
+use workspace_core::{Failure, Reason};
+
 use crate::options::{EnvironmentName, MachineType};
 use crate::sandbox::State;
 
@@ -116,6 +118,21 @@ impl BoatError {
 
     pub(crate) fn is_gone(&self) -> bool {
         matches!(self, Self::Refused { code: Some(code), .. } if code == NOT_FOUND)
+    }
+
+    fn reason(&self) -> Reason {
+        match self {
+            Self::NoEnvironment { .. } | Self::Mismatch { .. } => Reason::NotSetUp,
+            Self::Gone | Self::NotRunning { state: State::Gone } => Reason::Gone,
+            error if error.is_gone() => Reason::Gone,
+            _ => Reason::Other,
+        }
+    }
+}
+
+impl From<BoatError> for Failure {
+    fn from(error: BoatError) -> Self {
+        Failure::new(error.reason(), error)
     }
 }
 

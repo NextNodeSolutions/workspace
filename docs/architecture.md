@@ -32,7 +32,7 @@ flowchart LR
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
 
-An adapter reports a failure as an opaque cause. The core wraps it in its own error without reading it, so no provider type leaks into the core. The binary prints the error, then one line per underlying cause.
+A `Provider` reports a failure as an opaque cause, with a reason the core can act on: the account needs setup again, the provider no longer has the VM, or anything else. The core never reads the cause. It picks its error from the step and the reason, so no provider type leaks into the core. A VM the provider no longer has counts as stopped and as removed, so `stop` and `remove` can be repeated whatever the provider answers. The binary prints the error, then one line per underlying cause.
 
 ## Commands step by step
 
@@ -172,6 +172,8 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 | Failure | What is left |
 | --- | --- |
 | The VM name is invalid | Nothing |
+| The provider needs setup first | Nothing new. Run `setup`, then start again. |
+| The provider no longer has the VM | Its record, which `remove` forgets. |
 | The recorded VM cannot resume | The VM as it was, and its record. If the provider no longer has it, `remove` forgets the record. |
 | The provider cannot start the VM | Nothing |
 | The record cannot be written | A running VM with no record. The error holds its id. |

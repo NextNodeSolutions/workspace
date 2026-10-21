@@ -53,6 +53,13 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("{vm} no longer exists on its provider; its record is kept")]
+    Gone {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("could not open a shell on {vm}; it is left as it was")]
     Attach {
         vm: VmId,

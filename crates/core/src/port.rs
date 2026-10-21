@@ -1,43 +1,43 @@
-use crate::{Cause, VmId, VmSpec};
+use crate::{Cause, Failure, VmId, VmSpec};
 
 pub trait Provider {
     /// # Errors
     ///
     /// When the account is not ready for `create`.
-    fn setup(&self) -> Result<String, Cause>;
+    fn setup(&self) -> Result<String, Failure>;
 
     /// # Errors
     ///
     /// When no VM was started.
-    fn create(&self, spec: &VmSpec) -> Result<VmId, Cause>;
+    fn create(&self, spec: &VmSpec) -> Result<VmId, Failure>;
 
     /// # Errors
     ///
     /// When the VM may not run again, for example because the provider no
     /// longer has it. A request the provider never answered may still start
     /// the VM.
-    fn resume(&self, vm: &VmId) -> Result<(), Cause>;
+    fn resume(&self, vm: &VmId) -> Result<(), Failure>;
 
     /// # Errors
     ///
     /// When the VM is not running or does not become reachable.
-    fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Cause>;
+    fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Failure>;
 
     /// # Errors
     ///
     /// When no session could be opened, for example because the VM stopped.
     /// The VM is left as it was.
-    fn attach(&self, vm: &VmId) -> Result<(), Cause>;
+    fn attach(&self, vm: &VmId) -> Result<(), Failure>;
 
     /// # Errors
     ///
     /// When the VM may still be running.
-    fn stop(&self, vm: &VmId) -> Result<(), Cause>;
+    fn stop(&self, vm: &VmId) -> Result<(), Failure>;
 
     /// # Errors
     ///
     /// When the VM may still exist.
-    fn remove(&self, vm: &VmId) -> Result<(), Cause>;
+    fn remove(&self, vm: &VmId) -> Result<(), Failure>;
 }
 
 pub trait Shell {
