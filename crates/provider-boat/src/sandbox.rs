@@ -14,9 +14,7 @@ use crate::process;
 const NEW: &str = "new";
 const RESUME: &str = "resume";
 
-/// Boat answers within seconds, so a resume that still reads as stopped past
-/// this has stalled.
-const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
+const STALE_STOP_WINDOW: Duration = Duration::from_secs(60);
 
 const NO_WAIT: &str = "--no-wait";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -36,11 +34,11 @@ impl State {
         matches!(self, Self::Up | Self::Starting)
     }
 
-    pub(crate) fn is_stopped(&self) -> bool {
+    fn is_stopped(&self) -> bool {
         *self == Self::Stopped
     }
 
-    pub(crate) fn is_starting(&self) -> bool {
+    fn is_starting(&self) -> bool {
         *self == Self::Starting
     }
 
@@ -159,16 +157,23 @@ pub(crate) fn resume(id: &str, options: &[&str]) -> Result<(), BoatError> {
     let mut args = vec![id, NO_WAIT];
     args.extend_from_slice(options);
     match cli::run(RESUME, &args) {
-        Ok(_) => wait_while(id, ACCEPT_TIMEOUT, State::is_stopped).map(drop),
+        Ok(_) => Ok(()),
         Err(refusal) if refusal.is_refusal() => read(id)?.is_running().then_some(()).ok_or(refusal),
         Err(error) => Err(error),
     }
 }
 
+pub(crate) fn wait_until_up(id: &str, timeout: Duration) -> Result<State, BoatError> {
+    let stale_until = Instant::now() + STALE_STOP_WINDOW;
+    wait_while(id, timeout, |state| {
+        state.is_starting() || (state.is_stopped() && Instant::now() < stale_until)
+    })
+}
+
 pub(crate) fn wait_while(
     id: &str,
     timeout: Duration,
-    is_transient: fn(&State) -> bool,
+    is_transient: impl Fn(&State) -> bool,
 ) -> Result<State, BoatError> {
     let deadline = Instant::now() + timeout;
     loop {

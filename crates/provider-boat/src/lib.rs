@@ -82,7 +82,7 @@ impl Provider for Boat {
     }
 
     fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Failure> {
-        let state = sandbox::wait_while(vm.as_str(), START_TIMEOUT, State::is_starting)?;
+        let state = sandbox::wait_until_up(vm.as_str(), START_TIMEOUT)?;
         if state != State::Up {
             return Err(BoatError::NotRunning { state }.into());
         }

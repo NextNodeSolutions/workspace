@@ -177,7 +177,7 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 | The recorded VM cannot resume | The VM as it was, and its record. If the provider no longer has it, `remove` forgets the record. |
 | The provider cannot start the VM | Nothing |
 | The record cannot be written | A running VM with no record. The error holds its id. |
-| The VM never answers | A running, recorded VM |
+| The VM never answers | A recorded VM, which may still run |
 | The shell cannot open | The VM as it was, and its record. `start` opens the shell again, resuming the VM first if it stopped. |
 | A profile fails | A running, recorded VM, as the failed step left it |
 | Setup stops | The account as far as setup got, and the config file as it was. Run it again. |

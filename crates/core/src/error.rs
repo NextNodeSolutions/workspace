@@ -38,7 +38,7 @@ pub enum Error {
         cause: Cause,
     },
 
-    #[error("started {vm} but could not reach it; it is still running")]
+    #[error("started {vm} but could not reach it; it may still be running")]
     Shell {
         vm: VmId,
         #[source]
