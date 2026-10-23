@@ -1,0 +1,11 @@
+# Agent profile rules
+
+This crate holds the profiles that put a coding agent on a VM: `pi` and `claude`. `docs/profiles/pi.md` and `docs/profiles/claude.md` show what each one does. Both mirror this machine, so a VM behaves like it.
+
+- **Gather locally first, then touch the VM.** A profile reads versions, files and secrets on this machine before it runs anything on the VM, so a missing file or secret fails while the VM is still untouched. Local calls are bounded in time and output; scripts on the VM are not, since an install can run long.
+- **Secrets never enter a script.** Credentials travel on the shell's stdin: inside the archive, as the files they are here, or as `export` lines the secrets script reads. Scripts contain only constants of this crate, never a value from the config or from this machine. An error message names a secret, never its value.
+- **One script per step, each safe to repeat.** A step is one `bash` script with `set -euo pipefail`, so it stops at its first error and the error names that step. Installing checks what is there first, extracting overwrites, and the secrets file is rewritten name by name, so running a profile twice changes nothing the second time.
+- **Mirror lists are decisions.** What a profile copies is a named constant that tells apart what the agent reads from what it writes: sessions, caches, trust decisions and installed dependencies stay here. Adding a path to a list is a change to document in the profile's page.
+- **Match this machine.** Pi on the VM is the version this machine runs, since the extensions were written against it, unless an option says otherwise. Claude Code is whatever its installer gives, since it updates itself.
+- **Know nothing of the provider.** A profile sees the `Shell` port only. It never names Boat, a sandbox or a path of the provider, so it works on every provider that opens a shell on a Linux VM with `bash`, `tar`, `npm`, `pnpm` and `curl`.
+- **Options follow the provider's pattern.** Each profile has one options struct that gives both its flags, prefixed with the profile's name, and its `[profiles.<name>]` config table. Defaults live in this crate, values are validated when parsed, and a value that becomes a `bash` or `infisical` argument never starts with a dash.

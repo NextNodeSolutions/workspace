@@ -29,7 +29,7 @@ flowchart LR
 | --- | --- |
 | `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` hands your terminal to a shell on the VM until you leave it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
-| `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. |
+| `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. It may read this machine, such as the config of the agent it installs, and sends what it reads on stdin. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
 
 A `Provider` reports a failure as an opaque cause, with a reason the core can act on: the account needs setup again, the provider no longer has the VM, or anything else. The core never reads the cause. It picks its error from the step and the reason, so no provider type leaks into the core, and the cli can say which command to run next. A VM the provider no longer has counts as stopped and as removed, so `stop` and `remove` can be repeated whatever the provider answers. The binary prints the error, then one line per underlying cause.
@@ -73,7 +73,7 @@ sequenceDiagram
     You->>CLI: workspace start NAME
     CLI->>CLI: lock NAME, waiting while another start holds it
     CLI->>L: find the record named NAME
-    CLI->>CLI: build its provider, or else the default one, and the profiles
+    CLI->>CLI: build its provider, or else the default one, and the profiles with their options
     CLI->>Core: start
     alt NAME has no record
         Core->>P: create(spec)

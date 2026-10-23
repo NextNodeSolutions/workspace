@@ -6,7 +6,7 @@ use workspace_core::{Cause, Error as CoreError, VmId, VmSpec, lifecycle};
 
 use crate::ProviderArgs;
 use crate::adapters;
-use crate::config::{self, Config, Providers};
+use crate::config::{self, Config, Profiles, Providers};
 use crate::ledger::{self, FileLedger, Record, Records};
 
 const COLUMN_GAP: &str = "  ";
@@ -78,6 +78,7 @@ pub fn setup(
 pub fn start(
     name: &str,
     args: ProviderArgs,
+    profile_options: Profiles,
     file: Config,
     profile_names: &[String],
     detach: bool,
@@ -94,9 +95,10 @@ pub fn start(
     let ProviderArgs { provider, options } = args;
     let (provider_name, recorded) = pick_provider(spec.name(), recorded, provider, file.provider)?;
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
+    let profile_options = profile_options.or(file.profiles);
     let profiles = profile_names
         .iter()
-        .map(|profile| adapters::profile(profile))
+        .map(|profile| adapters::profile(profile, profile_options.clone()))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
     let with_next_step = |error| next_step(error, &provider_name, spec.name());

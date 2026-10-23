@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use config::Providers;
+use config::{Profiles, Providers};
 
 #[derive(Parser)]
 #[command(about = "Start, stop and remove VMs on any provider")]
@@ -24,6 +24,10 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one Command is parsed per run, so its size does not matter"
+)]
 enum Command {
     /// Prepare a provider account, make it the default provider and say what
     /// start will do; safe to run again
@@ -44,6 +48,8 @@ enum Command {
         profiles: Vec<String>,
         #[command(flatten)]
         provider: ProviderArgs,
+        #[command(flatten)]
+        profile_options: Profiles,
     },
     /// Stop a recorded VM on the provider that created it; it stays recorded
     Stop {
@@ -89,7 +95,8 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
             detach,
             profiles,
             provider,
-        } => commands::start(&name, provider, file()?, &profiles, detach),
+            profile_options,
+        } => commands::start(&name, provider, profile_options, file()?, &profiles, detach),
         Command::Stop { vm } => commands::stop(&vm, file()?.providers),
         Command::Remove { vm } => commands::remove(&vm, file()?.providers),
         Command::List => commands::list(),

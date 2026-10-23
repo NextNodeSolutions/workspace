@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use serde::Deserialize;
 use toml_edit::DocumentMut;
+use workspace_profile_agent::{ClaudeOptions, PiOptions};
 use workspace_provider_boat as boat;
 
 use crate::files::{self, FileError};
@@ -20,6 +21,8 @@ pub struct Config {
     pub provider: Option<String>,
     #[serde(default)]
     pub providers: Providers,
+    #[serde(default)]
+    pub profiles: Profiles,
 }
 
 #[derive(Args, Clone, Default, Deserialize)]
@@ -34,6 +37,26 @@ impl Providers {
     pub fn or(self, fallback: Self) -> Self {
         Self {
             boat: self.boat.or(fallback.boat),
+        }
+    }
+}
+
+#[derive(Args, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profiles {
+    #[command(flatten)]
+    #[serde(default)]
+    pub pi: PiOptions,
+    #[command(flatten)]
+    #[serde(default)]
+    pub claude: ClaudeOptions,
+}
+
+impl Profiles {
+    pub fn or(self, fallback: Self) -> Self {
+        Self {
+            pi: self.pi.or(fallback.pi),
+            claude: self.claude.or(fallback.claude),
         }
     }
 }

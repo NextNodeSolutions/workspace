@@ -1,13 +1,17 @@
 use workspace_core::port::{Profile, Provider};
+use workspace_profile_agent::{Claude, Pi};
 use workspace_provider_boat::Boat;
 
-use crate::config::Providers;
+use crate::config::{Profiles, Providers};
 
 type Registry<F> = &'static [(&'static str, F)];
 
 const PROVIDERS: Registry<fn(Providers) -> Box<dyn Provider>> =
     &[("boat", |options| Box::new(Boat::new(options.boat)))];
-const PROFILES: Registry<fn() -> Box<dyn Profile>> = &[];
+const PROFILES: Registry<fn(Profiles) -> Box<dyn Profile>> = &[
+    ("pi", |options| Box::new(Pi::new(options.pi))),
+    ("claude", |options| Box::new(Claude::new(options.claude))),
+];
 
 #[derive(Debug, thiserror::Error)]
 #[error("unknown {kind} `{name}`; available: {available}")]
@@ -37,9 +41,9 @@ pub fn provider(name: &str, options: Providers) -> Result<Box<dyn Provider>, Unk
     Ok(create(options))
 }
 
-pub fn profile(name: &str) -> Result<Box<dyn Profile>, UnknownAdapter> {
+pub fn profile(name: &str, options: Profiles) -> Result<Box<dyn Profile>, UnknownAdapter> {
     let create = find("profile", PROFILES, name)?;
-    Ok(create())
+    Ok(create(options))
 }
 
 fn find<F: Copy>(

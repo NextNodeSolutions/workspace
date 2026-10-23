@@ -10,6 +10,7 @@ ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
 workspace setup                       # once, to prepare the provider account
 workspace start dev                   # creates dev, or resumes it, then opens a shell on it
+workspace start dev --profile pi      # the same, with this machine's Pi installed on it
 workspace start -d dev                # the same, but prints its id instead of a shell
 workspace stop dev                    # stops the VM and keeps its disk
 workspace remove dev                  # deletes the VM and its data for good
@@ -44,4 +45,4 @@ stateDiagram-v2
 
 A VM's name stands for its id in every command, and `list` prints both.
 
-A provider is where VMs run, such as [Boat](docs/providers/boat.md). A profile is what a VM is for, such as an agent and its tools. Both are plugins that the core knows nothing about, as [Architecture](docs/architecture.md) explains. Their options come from flags or a config file, as [Configuration](docs/configuration.md) explains. To change the code, read [AGENTS.md](AGENTS.md), which holds the rules for people and coding agents alike.
+A provider is where VMs run, such as [Boat](docs/providers/boat.md). A profile is what a VM is for, such as [Pi](docs/profiles/pi.md) or [Claude Code](docs/profiles/claude.md), set up as on this machine. Both are plugins that the core knows nothing about, as [Architecture](docs/architecture.md) explains. Their options come from flags or a config file, as [Configuration](docs/configuration.md) explains. To change the code, read [AGENTS.md](AGENTS.md), which holds the rules for people and coding agents alike.
