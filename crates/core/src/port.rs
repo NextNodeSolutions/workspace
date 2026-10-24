@@ -36,6 +36,11 @@ pub trait Provider {
 
     /// # Errors
     ///
+    /// When nothing is saved under `name`. The VM is left as it was.
+    fn snapshot(&self, vm: &VmId, name: &str) -> Result<(), Failure>;
+
+    /// # Errors
+    ///
     /// When the VM may still exist.
     fn remove(&self, vm: &VmId) -> Result<(), Failure>;
 }

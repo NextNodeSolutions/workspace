@@ -50,8 +50,16 @@ pub(crate) fn call<T: DeserializeOwned>(
 }
 
 pub(crate) fn run(subcommand: &'static str, args: &[&str]) -> Result<Vec<u8>, BoatError> {
+    run_within(subcommand, args, CALL_TIMEOUT)
+}
+
+pub(crate) fn run_within(
+    subcommand: &'static str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Vec<u8>, BoatError> {
     let child = spawn(subcommand, args, Stdio::null())?;
-    let output = process::collect(subcommand, child, &[], Some(CALL_TIMEOUT))?;
+    let output = process::collect(subcommand, child, &[], Some(timeout))?;
     if !output.status.success() {
         let failure = Failure::last_in(&output.stdout)
             .unwrap_or_else(|| Failure::from_stderr(&output.stderr));

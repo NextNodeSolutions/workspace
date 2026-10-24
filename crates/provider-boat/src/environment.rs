@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::cli;
 use crate::error::BoatError;
-use crate::options::EnvironmentName;
+use crate::options::BoatName;
 
 /// The master switch stays off, since it would also withhold the boat key.
 const SETTINGS: Toggles = Toggles {
@@ -89,7 +89,7 @@ impl fmt::Display for Change {
     }
 }
 
-pub(crate) fn check(name: &EnvironmentName) -> Result<(), BoatError> {
+pub(crate) fn check(name: &BoatName) -> Result<(), BoatError> {
     let environment = find(name)?.ok_or_else(|| missing(name))?;
     let changed = environment.effective.differences(SETTINGS.injected);
     if changed.is_empty() {
@@ -101,7 +101,7 @@ pub(crate) fn check(name: &EnvironmentName) -> Result<(), BoatError> {
     })
 }
 
-pub(crate) fn ensure(name: &EnvironmentName) -> Result<Change, BoatError> {
+pub(crate) fn ensure(name: &BoatName) -> Result<Change, BoatError> {
     let (environment, is_new) = match find(name)? {
         Some(environment) => (environment, false),
         None => (create(name)?, true),
@@ -121,18 +121,18 @@ pub(crate) fn ensure(name: &EnvironmentName) -> Result<Change, BoatError> {
     })
 }
 
-fn find(name: &EnvironmentName) -> Result<Option<Environment>, BoatError> {
+fn find(name: &BoatName) -> Result<Option<Environment>, BoatError> {
     let listing: Listing = cli::call("env list", &[])?;
     let mut environments = listing.environments.into_iter();
     Ok(environments.find(|environment| environment.name == name.as_str()))
 }
 
-fn create(name: &EnvironmentName) -> Result<Environment, BoatError> {
+fn create(name: &BoatName) -> Result<Environment, BoatError> {
     cli::run("env new", &[name.as_str()])?;
     find(name)?.ok_or_else(|| missing(name))
 }
 
-fn configure(name: &EnvironmentName) -> Result<(), BoatError> {
+fn configure(name: &BoatName) -> Result<(), BoatError> {
     let Toggles {
         safe_for_third_parties,
         injected,
@@ -158,6 +158,6 @@ fn flag(value: bool) -> &'static str {
     if value { "true" } else { "false" }
 }
 
-fn missing(name: &EnvironmentName) -> BoatError {
+fn missing(name: &BoatName) -> BoatError {
     BoatError::NoEnvironment { name: name.clone() }
 }

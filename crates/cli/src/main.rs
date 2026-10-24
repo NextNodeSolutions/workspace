@@ -35,11 +35,13 @@ enum Command {
         #[command(flatten)]
         provider: ProviderArgs,
     },
-    /// Create the VM, or resume it when its name is recorded, apply each
-    /// profile, then open a shell on it; safe to run again
+    /// Create a disposable VM, or create or resume the one recorded under
+    /// NAME, apply each profile, then open a shell on it; safe to run again
     Start {
-        /// 1 to 63 lowercase letters, digits or hyphens
-        name: String,
+        /// Name to record the VM under, so that later starts resume it
+        /// instead of creating another; 1 to 63 lowercase letters, digits
+        /// or hyphens. Without one the VM is deleted when you leave it
+        name: Option<String>,
         /// Print the VM's id instead of opening a shell on it, as scripts need
         #[arg(short, long)]
         detach: bool,
@@ -61,7 +63,16 @@ enum Command {
         /// The VM's name, or its id
         vm: String,
     },
-    /// Print each recorded VM: its name, its id and its provider
+    /// Save a recorded VM under a name, so that new VMs can start from it
+    /// once the provider option that names a snapshot is set
+    Snapshot {
+        /// The VM's name, or its id
+        vm: String,
+        /// Name to save the snapshot under; reusing one replaces it
+        name: String,
+    },
+    /// Print each recorded VM: its name, or - when it is disposable, its id
+    /// and its provider
     #[command(visible_alias = "ls")]
     List,
 }
@@ -96,9 +107,17 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
             profiles,
             provider,
             profile_options,
-        } => commands::start(&name, provider, profile_options, file()?, &profiles, detach),
+        } => commands::start(
+            name.as_deref(),
+            provider,
+            profile_options,
+            file()?,
+            &profiles,
+            detach,
+        ),
         Command::Stop { vm } => commands::stop(&vm, file()?.providers),
         Command::Remove { vm } => commands::remove(&vm, file()?.providers),
+        Command::Snapshot { vm, name } => commands::snapshot(&vm, &name, file()?.providers),
         Command::List => commands::list(),
     }
 }

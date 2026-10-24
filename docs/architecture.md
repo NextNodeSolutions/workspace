@@ -27,7 +27,7 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` hands your terminal to a shell on the VM until you leave it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one, and reads from the spec whether the VM is disposable. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` hands your terminal to a shell on the VM until you leave it. `snapshot` saves the VM under a name, so new VMs can start from it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. It may read this machine, such as the config of the agent it installs, and sends what it reads on stdin. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
@@ -70,9 +70,11 @@ sequenceDiagram
     participant L as Ledger
     participant Pr as Profiles
     participant S as Shell
-    You->>CLI: workspace start NAME
-    CLI->>CLI: lock NAME, waiting while another start holds it
-    CLI->>L: find the record named NAME
+    You->>CLI: workspace start [NAME]
+    opt NAME given
+        CLI->>CLI: lock NAME, waiting while another start holds it
+        CLI->>L: find the record named NAME
+    end
     CLI->>CLI: build its provider, or else the default one, and the profiles with their options
     CLI->>Core: start
     alt NAME has no record
@@ -98,15 +100,42 @@ sequenceDiagram
         CLI->>Core: attach(id)
         Core->>P: attach(id)
         P-->>You: a shell on the VM, until you leave it
-        CLI-->>You: says that the VM still runs
+        alt NAME given
+            CLI-->>You: says that the VM still runs
+        else disposable
+            CLI->>Core: remove(id)
+            CLI-->>You: says that the VM is deleted
+        end
     end
 ```
 
 The record is written right after the provider returns the id, before anything waits. If you interrupt a start, the VM is already recorded.
 
+A VM without a name is disposable. Its record has no name line, `list` shows `-` in place of one, and nothing resumes it: leaving its shell deletes it, `stop` deletes it, and the provider deletes it when the lifetime it gave the VM runs out. With `-d`, the VM outlives the command, so the id it prints is what `remove` takes.
+
 A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Two starts of one name at the same moment do not create two VMs either: the second waits until the first has recorded its VM and applied its profiles, then resumes that VM. The lock lasts only as long as the process that holds it, so an interrupted start never blocks the next one. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options apply when `start` creates a VM, and each provider's page says which ones also apply when it resumes one. `--provider` cannot move a recorded VM: naming another provider than its record's is an error.
 
 Without `-d`, `start` ends by handing your terminal to a shell on the VM. Leaving the shell leaves the VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
+
+### `snapshot`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant CLI as cli
+    participant L as Ledger
+    participant Core as core
+    participant P as Provider
+    You->>CLI: workspace snapshot VM NAME
+    CLI->>L: find the record whose id or else name is VM
+    CLI->>Core: snapshot
+    Core->>P: snapshot(ID, NAME)
+    Note over P: saves the VM's disk under NAME, replacing an earlier one
+    CLI-->>You: prints NAME
+```
+
+The VM is left as it was. A provider option then names the snapshot that new VMs start from, so a VM that profiles prepared once serves as the image of every later one, disposable ones included.
 
 ### `stop` and `remove`
 
@@ -123,7 +152,7 @@ sequenceDiagram
     L-->>CLI: the VM id and its provider
     CLI->>CLI: build that provider
     alt stop
-        CLI->>Core: stop
+        CLI->>Core: stop, or remove when the VM is disposable
         Core->>P: stop(ID)
         Note over L: the record stays
     else remove
@@ -187,12 +216,14 @@ Nothing is stopped for you. A failed VM keeps running and the error names it, so
 
 ## Records
 
-`start` writes one file per VM, named after the VM id, under the XDG data directory. The file names the provider and the VM name:
+`start` writes one file per VM, named after the VM id, under the XDG data directory. The file names the provider and, for a kept VM, the VM name:
 
 ```
 provider=boat
 name=dev
 ```
+
+A record without a name line is a disposable VM.
 
 The file is written under a temporary name, then renamed, so it is never half written. After an interrupted start, `workspace list` shows the VM.
 

@@ -6,7 +6,7 @@ These are the rules for changing this repository, for people and coding agents a
 
 These come first. A change that weakens one is wrong, even when it compiles.
 
-1. **A running VM is never lost.** VMs cost money. The record is written as soon as a provider returns an id, before anything waits on the VM, and a provider returns the id as early as it can. Nothing stops or deletes a VM because a step failed. The error names the VM, and the user decides.
+1. **A running VM is never lost.** VMs cost money. The record is written as soon as a provider returns an id, before anything waits on the VM, and a provider returns the id as early as it can. Nothing stops or deletes a VM because a step failed. The error names the VM, and the user decides. A disposable VM is deleted only when the person leaves its shell, asks for it, or its lifetime runs out.
 2. **Every command can be repeated.** Setup, profiles, start, stop and remove are safe to run again. Something already done counts as success, such as starting a running VM, stopping a stopped VM or removing a deleted one.
 3. **A record never disappears before its VM.** `stop` keeps the record. `remove` deletes it only after the provider confirms the VM is gone.
 4. **Secrets travel on stdin.** They never appear in a script, a command argument, a log or an error message.
