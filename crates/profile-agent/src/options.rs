@@ -3,11 +3,6 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use crate::error::AgentError;
-use crate::infisical::Source;
-
-const DEFAULT_ENVIRONMENT: &str = "dev";
-
 macro_rules! checked_string {
     ($name:ident, $is_valid:ident) => {
         #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -85,47 +80,4 @@ pub(crate) enum InvalidOption {
         "`{0}` is not a version: use ASCII letters, digits, dots, dashes and pluses, and do not start with a dash"
     )]
     Version(String),
-}
-
-pub(crate) struct SecretSettings {
-    project: Option<Identifier>,
-    environment: Identifier,
-    names: Vec<SecretName>,
-}
-
-impl SecretSettings {
-    pub(crate) fn new(
-        project: Option<Identifier>,
-        environment: Option<Identifier>,
-        names: Option<Vec<SecretName>>,
-        defaults: &[&str],
-    ) -> Self {
-        let default_names = || {
-            defaults
-                .iter()
-                .map(|name| name.parse().expect("default secret names are valid"))
-                .collect()
-        };
-        Self {
-            project,
-            environment: environment.unwrap_or_else(|| Identifier(DEFAULT_ENVIRONMENT.to_owned())),
-            names: names.unwrap_or_else(default_names),
-        }
-    }
-
-    /// `None` when the profile exports no secret, so Infisical is never called.
-    pub(crate) fn source(&self, profile: &'static str) -> Result<Option<Source>, AgentError> {
-        if self.names.is_empty() {
-            return Ok(None);
-        }
-        let project = self
-            .project
-            .clone()
-            .ok_or(AgentError::NoProject { profile })?;
-        Ok(Some(Source {
-            project,
-            environment: self.environment.clone(),
-            names: self.names.clone(),
-        }))
-    }
 }

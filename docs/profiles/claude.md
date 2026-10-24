@@ -45,11 +45,11 @@ The profile exports it in every shell on the VM, so `claude` and `claude -p` are
 
 ## Secrets
 
-Secrets travel as the [Pi profile](pi.md#secrets) describes, through the same file on the VM. Each profile replaces only the names it owns.
+Secrets travel as the [Pi profile](pi.md#secrets) describes, through the same file on the VM, with the same `env:` prefix for a value read from this machine's environment. Each profile replaces only the names it owns.
 
 | Flag | Config key | What it sets |
 | --- | --- | --- |
-| `--claude-infisical-project` | `infisical_project` | The Infisical project the secrets come from. Required when the profile exports any. |
+| `--claude-infisical-project` | `infisical_project` | The Infisical project the secrets come from. Required when a secret comes from Infisical. |
 | `--claude-infisical-env` | `infisical_env` | The Infisical environment, `dev` by default. |
 | `--claude-secrets` | `secrets` | The secrets to export, `CLAUDE_CODE_OAUTH_TOKEN` and `GITHUB_TOKEN` by default. `secrets = []` in the config file exports none. |
 

@@ -1,14 +1,17 @@
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 use clap::Args;
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use workspace_core::Cause;
 use workspace_core::port::{Profile, Shell};
 
 use crate::error::AgentError;
-use crate::options::{Identifier, SecretName, SecretSettings, Version};
-use crate::{archive, infisical, local, remote};
+use crate::options::{Identifier, Version};
+use crate::secrets::{SecretSettings, SecretSpec};
+use crate::{archive, json, local, remote};
 
 const NAME: &str = "pi";
 
@@ -19,6 +22,23 @@ const PACKAGE: &str = "@earendil-works/pi-coding-agent";
 const DEFAULT_SECRETS: &[&str] = &["GITHUB_TOKEN"];
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(30);
+
+const ADAPTER_SETTINGS: &str = "mcp-adapter.json";
+
+/// The VM has no keychain, so the MCP adapter keeps OAuth sign-ins in an
+/// encrypted file instead, under a key that stays on the VM.
+const OAUTH_STORE_SETTING: (&str, &str) = ("oauthCredentialStore", "encrypted-file");
+
+const OAUTH_KEY_SCRIPT: &str = r#"set -euo pipefail
+umask 077
+dir="$HOME/.config/workspace"
+file="$dir/secrets.env"
+mkdir -p "$dir"
+touch "$file"
+if ! grep -q '^export PI_MCP_ADAPTER_OAUTH_FILE_KEY=' "$file"; then
+  printf "export PI_MCP_ADAPTER_OAUTH_FILE_KEY='%s'\n" "$(head -c 32 /dev/urandom | base64 -w0)" >> "$file"
+fi
+"#;
 
 /// What Pi reads from its agent directory, as opposed to what it writes
 /// there: sessions, caches, trust decisions and installed dependencies stay.
@@ -83,7 +103,7 @@ pub struct PiOptions {
     /// Secrets to export in every shell on the VM, comma-separated
     /// [default: `GITHUB_TOKEN`]
     #[arg(long = "pi-secrets", value_name = "NAMES", value_delimiter = ',')]
-    secrets: Option<Vec<SecretName>>,
+    secrets: Option<Vec<SecretSpec>>,
 }
 
 impl PiOptions {
@@ -130,20 +150,37 @@ impl Profile for Pi {
             Some(version) => version.clone(),
             None => local_version()?,
         };
-        let secrets = match self.secrets.source(NAME)? {
-            Some(source) => infisical::fetch(&source)?,
-            None => Vec::new(),
-        };
-        let archive = archive::pack(&local::home()?.join(DIRECTORY), MIRRORED)?;
+        let secrets = self.secrets.fetch(NAME)?;
+        let directory = local::home()?.join(DIRECTORY);
+        let archive = archive::pack(&directory, MIRRORED)?;
+        let adapter_settings = adapter_settings(&directory.join(ADAPTER_SETTINGS))?;
         remote::hook(shell)?;
         shell.run(&install_script(&version), &[])?;
         remote::extract(shell, DIRECTORY, &archive)?;
+        remote::write_file(
+            shell,
+            &format!("{DIRECTORY}/{ADAPTER_SETTINGS}"),
+            &adapter_settings,
+        )?;
         shell.run(DEPENDENCIES_SCRIPT, &[])?;
+        shell.run(OAUTH_KEY_SCRIPT, &[])?;
         if !secrets.is_empty() {
             remote::export_secrets(shell, &secrets)?;
         }
         Ok(())
     }
+}
+
+fn adapter_settings(path: &Path) -> Result<Vec<u8>, AgentError> {
+    json::rewrite(path, |fields| {
+        let settings = fields
+            .entry("settings")
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Value::Object(settings) = settings {
+            let (key, value) = OAUTH_STORE_SETTING;
+            settings.insert(key.to_owned(), Value::String(value.to_owned()));
+        }
+    })
 }
 
 fn install_script(version: &Version) -> String {

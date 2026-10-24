@@ -71,7 +71,12 @@ pub(crate) enum AgentError {
     },
 
     #[error("{} does not hold a JSON object", .0.display())]
-    NotSettings(PathBuf),
+    NotObject(PathBuf),
+
+    #[error(
+        "this machine's environment has no `{name}`: export it, or drop `env:{name}` from the profile's secrets"
+    )]
+    MissingEnvironment { name: String },
 }
 
 fn on_new_line(text: &str) -> String {
