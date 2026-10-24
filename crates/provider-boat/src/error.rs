@@ -3,7 +3,7 @@ use std::string::FromUtf8Error;
 
 use workspace_core::{Failure, Reason};
 
-use crate::options::{EnvironmentName, MachineType};
+use crate::options::{BoatName, InvalidOption, MachineType};
 use crate::sandbox::State;
 
 const NOT_FOUND: &str = "not_found";
@@ -58,18 +58,15 @@ pub(crate) enum BoatError {
     },
 
     #[error("the Boat environment `{name}` does not exist")]
-    NoEnvironment { name: EnvironmentName },
+    NoEnvironment { name: BoatName },
 
     #[error(
         "`{name}` is the default Boat environment, which other sandboxes start from, so setup leaves it alone: name another one with --boat-environment or `environment` in the config file"
     )]
-    DefaultEnvironment { name: EnvironmentName },
+    DefaultEnvironment { name: BoatName },
 
     #[error("the Boat environment `{name}` no longer matches what setup sets: {changed}")]
-    Mismatch {
-        name: EnvironmentName,
-        changed: String,
-    },
+    Mismatch { name: BoatName, changed: String },
 
     #[error("`boat new` ended without printing a sandbox id")]
     NoId,
@@ -99,6 +96,9 @@ pub(crate) enum BoatError {
 
     #[error("the script printed output that is not UTF-8")]
     NotUtf8(#[source] FromUtf8Error),
+
+    #[error(transparent)]
+    Option(#[from] InvalidOption),
 }
 
 impl BoatError {

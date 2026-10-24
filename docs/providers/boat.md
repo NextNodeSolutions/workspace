@@ -14,8 +14,11 @@ On the `boat` provider, each VM is a [Boat](https://boat.dev) sandbox. The adapt
 | `--boat-type` | `type` | The machine size. It defaults to the smallest. A larger one is a choice you make here. |
 | `--boat-ttl` | `ttl` | How long after it starts Boat stops the sandbox, such as `90m` or `8h`. The timer starts again on each resume. |
 | `--boat-environment` | `environment` | The Boat environment that sandboxes start from |
+| `--boat-from` | `from` | The saved snapshot that new sandboxes start from, as `workspace snapshot` saves it. Without it, they start from Boat's base image. |
 
 `workspace start --help` shows the accepted values and the defaults. `setup` checks that your Boat plan allows the machine type. The machine type is chosen when `start` creates a sandbox. The TTL and the environment also apply each time `start` resumes one.
+
+A disposable VM is created with `--no-snapshots`: Boat keeps no disk for it, so a stop erases it and nothing is left to pay for or to clean up. Boat charges per second while a sandbox runs; create, resume, fork and stop cost nothing, and a stopped kept sandbox costs nothing either. Saved snapshots are included in the plan, ten of them on the $20 plan, and each one beyond that costs $1.70 a month, so `workspace snapshot` reuses one name rather than inventing new ones.
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
@@ -169,6 +172,22 @@ sequenceDiagram
 Boat resumes only a stopped sandbox, so one that is still stopping is waited for first. `boat resume` would wait until the sandbox is ready, so the adapter passes `--no-wait`: the call returns once Boat accepts, within its time limit, and `shell` waits for the sandbox as after `create`. Boat may still report the sandbox as stopped for a moment after it accepts, and that same wait lets it pass, so a resume reads the state no more than it must.
 
 A resumed sandbox gets what its environment holds at that moment, so the adapter checks the environment first, as before a create. It then pins the sandbox to that environment, so the sandbox gets the version just checked, even if someone upgraded the environment while the sandbox was stopped. The sandbox keeps its machine type, and its TTL starts again from the resume. A gone sandbox cannot come back: `start` then says that `workspace remove` forgets its record.
+
+### `snapshot`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Core as core
+    participant A as Boat adapter
+    participant B as boat CLI
+    Core->>A: snapshot(ID, NAME)
+    A->>B: boat snapshot ID NAME
+    Note over A,B: saves the running or stopped sandbox's disk, replacing a saved snapshot of that name
+    A-->>Core: done
+```
+
+Saving uploads the disk, which takes seconds to minutes, so the call has a long time limit. `boat new --from NAME` then starts new sandboxes from it, with the environment and `--no-snapshots` as usual. A sandbox created from a snapshot is ready in a few seconds with everything the snapshot holds, profiles' work included.
 
 ### `attach`
 

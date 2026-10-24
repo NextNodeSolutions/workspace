@@ -1,6 +1,6 @@
 # Configuration
 
-Providers take options, such as a machine type. You set an option with a flag, in the config file, or not at all. Each provider's page says which options apply when `start` resumes a VM rather than create one.
+Providers and profiles take options, such as a machine type or a secret to export. You set an option with a flag, in the config file, or not at all. Each provider's page says which options apply when `start` resumes a VM rather than create one.
 
 ## Which value wins
 
@@ -32,7 +32,14 @@ Each provider reads its own table under `[providers]`, named after the provider:
 type = "small"
 ```
 
-Each provider's page lists its keys, and `workspace start --help` lists the matching flags.
+Each profile reads its own table under `[profiles]`, the same way:
+
+```toml
+[profiles.pi]
+infisical_project = "…"
+```
+
+Each provider's or profile's page lists its keys, and `workspace start --help` lists the matching flags.
 
 ## The default provider
 

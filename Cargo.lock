@@ -355,6 +355,7 @@ dependencies = [
  "toml",
  "toml_edit",
  "workspace-core",
+ "workspace-profile-agent",
  "workspace-provider-boat",
 ]
 
@@ -363,6 +364,17 @@ name = "workspace-core"
 version = "0.1.0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "workspace-profile-agent"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "workspace-core",
 ]
 
 [[package]]

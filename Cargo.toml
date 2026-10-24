@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 workspace-core = { path = "crates/core" }
 workspace-provider-boat = { path = "crates/provider-boat" }
+workspace-profile-agent = { path = "crates/profile-agent" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

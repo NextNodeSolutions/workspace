@@ -67,6 +67,14 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("could not save {vm} as `{name}`; the VM is left as it was")]
+    Snapshot {
+        vm: VmId,
+        name: String,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("could not stop {vm}; it may still be running")]
     Stop {
         vm: VmId,

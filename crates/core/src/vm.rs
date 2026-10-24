@@ -7,27 +7,41 @@ pub(crate) const MAX_NAME_LENGTH: usize = 63;
 
 #[derive(Debug, Clone)]
 pub struct VmSpec {
-    name: String,
+    name: Option<String>,
 }
 
 impl VmSpec {
+    /// A named VM is kept: `start` resumes it and `stop` keeps its disk.
+    ///
     /// # Errors
     ///
     /// [`Error::InvalidName`] unless `name` is a DNS label.
-    pub fn new(name: &str) -> Result<Self, Error> {
+    pub fn named(name: &str) -> Result<Self, Error> {
         if !is_dns_label(name) {
             return Err(Error::InvalidName {
                 name: name.to_owned(),
             });
         }
         Ok(Self {
-            name: name.to_owned(),
+            name: Some(name.to_owned()),
         })
     }
 
+    /// A VM without a name is disposable: it is deleted once you leave it,
+    /// and a stop deletes it too.
     #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn disposable() -> Self {
+        Self { name: None }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    #[must_use]
+    pub fn is_disposable(&self) -> bool {
+        self.name.is_none()
     }
 }
 

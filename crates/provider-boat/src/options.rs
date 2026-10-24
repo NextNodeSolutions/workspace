@@ -38,7 +38,12 @@ pub struct Options {
     /// Boat environment the sandboxes start from, which setup prepares
     /// [default: main]
     #[arg(long = "boat-environment", value_name = "NAME")]
-    environment: Option<EnvironmentName>,
+    environment: Option<BoatName>,
+
+    /// Saved snapshot that new sandboxes start from, as `workspace snapshot`
+    /// saves it [default: Boat's base image]
+    #[arg(long = "boat-from", value_name = "NAME")]
+    from: Option<BoatName>,
 }
 
 impl Options {
@@ -48,6 +53,7 @@ impl Options {
             machine_type: self.machine_type.or(fallback.machine_type),
             ttl: self.ttl.or(fallback.ttl),
             environment: self.environment.or(fallback.environment),
+            from: self.from.or(fallback.from),
         }
     }
 
@@ -57,7 +63,8 @@ impl Options {
             ttl: self.ttl.unwrap_or(DEFAULT_TTL),
             environment: self
                 .environment
-                .unwrap_or_else(|| EnvironmentName(DEFAULT_ENVIRONMENT.to_owned())),
+                .unwrap_or_else(|| BoatName(DEFAULT_ENVIRONMENT.to_owned())),
+            from: self.from,
         }
     }
 }
@@ -65,7 +72,8 @@ impl Options {
 pub(crate) struct Settings {
     pub(crate) machine_type: MachineType,
     pub(crate) ttl: Ttl,
-    pub(crate) environment: EnvironmentName,
+    pub(crate) environment: BoatName,
+    pub(crate) from: Option<BoatName>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
@@ -147,27 +155,27 @@ impl fmt::Display for Ttl {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
-pub(crate) struct EnvironmentName(String);
+pub(crate) struct BoatName(String);
 
-impl EnvironmentName {
+impl BoatName {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-impl FromStr for EnvironmentName {
+impl FromStr for BoatName {
     type Err = InvalidOption;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         let is_allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
         if name.is_empty() || name.starts_with('-') || !name.chars().all(is_allowed) {
-            return Err(InvalidOption::EnvironmentName(name.to_owned()));
+            return Err(InvalidOption::BoatName(name.to_owned()));
         }
         Ok(Self(name.to_owned()))
     }
 }
 
-impl TryFrom<String> for EnvironmentName {
+impl TryFrom<String> for BoatName {
     type Error = InvalidOption;
 
     fn try_from(name: String) -> Result<Self, Self::Error> {
@@ -175,7 +183,7 @@ impl TryFrom<String> for EnvironmentName {
     }
 }
 
-impl fmt::Display for EnvironmentName {
+impl fmt::Display for BoatName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }
@@ -187,7 +195,7 @@ pub(crate) enum InvalidOption {
     Ttl(String),
 
     #[error(
-        "`{0}` cannot name a Boat environment: use ASCII letters, digits, dots, dashes and underscores, and do not start with a dash"
+        "`{0}` cannot name a Boat environment or snapshot: use ASCII letters, digits, dots, dashes and underscores, and do not start with a dash"
     )]
-    EnvironmentName(String),
+    BoatName(String),
 }

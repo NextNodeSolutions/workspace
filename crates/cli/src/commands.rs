@@ -2,14 +2,17 @@ use std::error::Error;
 use std::io::{self, IsTerminal};
 use std::path::Path;
 
+use workspace_core::port::{Ledger, Provider};
 use workspace_core::{Cause, Error as CoreError, VmId, VmSpec, lifecycle};
 
 use crate::ProviderArgs;
 use crate::adapters;
-use crate::config::{self, Config, Providers};
+use crate::config::{self, Config, Profiles, Providers};
 use crate::ledger::{self, FileLedger, Record, Records};
 
 const COLUMN_GAP: &str = "  ";
+
+const DISPOSABLE_MARK: &str = "-";
 
 #[derive(Debug, thiserror::Error)]
 #[error("no terminal to open a shell in: pass -d to start the VM without one")]
@@ -76,8 +79,9 @@ pub fn setup(
 }
 
 pub fn start(
-    name: &str,
+    name: Option<&str>,
     args: ProviderArgs,
+    profile_options: Profiles,
     file: Config,
     profile_names: &[String],
     detach: bool,
@@ -86,33 +90,59 @@ pub fn start(
     if !detach && !has_terminal {
         return Err(NoTerminal.into());
     }
-    let spec = VmSpec::new(name)?;
-    let lock = ledger::lock_name(spec.name(), || {
-        eprintln!("Another `workspace start {name}` is running: waiting for it to finish.");
-    })?;
-    let recorded = ledger::named(spec.name())?;
+    let spec = match name {
+        Some(name) => VmSpec::named(name)?,
+        None => VmSpec::disposable(),
+    };
+    let on_wait =
+        || eprintln!("Another `workspace start` of that name is running: waiting for it.");
+    let lock = spec
+        .name()
+        .map(|name| ledger::lock_name(name, on_wait))
+        .transpose()?;
+    let recorded = spec.name().map(ledger::named).transpose()?.flatten();
     let ProviderArgs { provider, options } = args;
-    let (provider_name, recorded) = pick_provider(spec.name(), recorded, provider, file.provider)?;
+    let (provider_name, recorded) = pick_provider(&spec, recorded, provider, file.provider)?;
     let provider = adapters::provider(&provider_name, options.or(file.providers))?;
+    let profile_options = profile_options.or(file.profiles);
     let profiles = profile_names
         .iter()
-        .map(|profile| adapters::profile(profile))
+        .map(|profile| adapters::profile(profile, profile_options.clone()))
         .collect::<Result<Vec<_>, _>>()?;
     let ledger = FileLedger::for_provider(&provider_name)?;
-    let with_next_step = |error| next_step(error, &provider_name, spec.name());
+    let with_next_step = |error| next_step(error, &provider_name, &spec);
     let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)
         .map_err(with_next_step)?;
     drop(lock);
     if detach {
         println!("{vm}");
+        if spec.is_disposable() {
+            eprintln!(
+                "{vm} is disposable: `workspace remove {vm}` deletes it, and its provider deletes it once its lifetime runs out."
+            );
+        }
         return Ok(());
     }
     lifecycle::attach(provider.as_ref(), &vm).map_err(with_next_step)?;
+    leave(provider.as_ref(), &ledger, &vm, &spec)
+}
+
+fn leave(
+    provider: &dyn Provider,
+    ledger: &dyn Ledger,
+    vm: &VmId,
+    spec: &VmSpec,
+) -> Result<(), Box<dyn Error>> {
+    let Some(name) = spec.name() else {
+        lifecycle::remove(provider, ledger, vm)?;
+        eprintln!("{vm} was disposable, so it is deleted.");
+        return Ok(());
+    };
     eprintln!("{name} is still running: `workspace stop {name}` stops it.");
     Ok(())
 }
 
-fn next_step(error: CoreError, provider: &str, name: &str) -> Box<dyn Error> {
+fn next_step(error: CoreError, provider: &str, spec: &VmSpec) -> Box<dyn Error> {
     match error {
         CoreError::Setup { cause } => NeedsSetup {
             provider: provider.to_owned(),
@@ -120,7 +150,7 @@ fn next_step(error: CoreError, provider: &str, name: &str) -> Box<dyn Error> {
         }
         .into(),
         CoreError::Gone { vm, cause } => Vanished {
-            name: name.to_owned(),
+            name: spec.name().unwrap_or(vm.as_str()).to_owned(),
             vm,
             cause,
         }
@@ -130,14 +160,14 @@ fn next_step(error: CoreError, provider: &str, name: &str) -> Box<dyn Error> {
 }
 
 fn pick_provider(
-    name: &str,
+    spec: &VmSpec,
     recorded: Option<Record>,
     asked: Option<String>,
     default: Option<String>,
 ) -> Result<(String, Option<VmId>), Box<dyn Error>> {
     match (recorded, asked) {
         (Some(record), Some(asked)) if asked != record.provider => Err(OtherProvider {
-            name: name.to_owned(),
+            name: spec.name().unwrap_or_default().to_owned(),
             recorded: record.provider,
             asked,
         }
@@ -147,10 +177,31 @@ fn pick_provider(
     }
 }
 
+/// A disposable VM has no disk to keep, so stopping it deletes it.
 pub fn stop(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
     let record = ledger::find(vm)?;
     let provider = adapters::provider(&record.provider, file)?;
+    if record.name.is_none() {
+        let ledger = FileLedger::for_provider(&record.provider)?;
+        lifecycle::remove(provider.as_ref(), &ledger, &record.id)?;
+        eprintln!(
+            "{} was disposable, so it is deleted rather than stopped.",
+            record.id
+        );
+        return Ok(());
+    }
     lifecycle::stop(provider.as_ref(), &record.id)?;
+    Ok(())
+}
+
+pub fn snapshot(vm: &str, name: &str, file: Providers) -> Result<(), Box<dyn Error>> {
+    let record = ledger::find(vm)?;
+    let provider = adapters::provider(&record.provider, file)?;
+    lifecycle::snapshot(provider.as_ref(), &record.id, name)?;
+    println!("{name}");
+    eprintln!(
+        "New VMs start from it once the provider option that names a snapshot is set to `{name}`."
+    );
     Ok(())
 }
 
@@ -164,11 +215,11 @@ pub fn remove(vm: &str, file: Providers) -> Result<(), Box<dyn Error>> {
 
 pub fn list() -> Result<(), Box<dyn Error>> {
     let Records { found, unreadable } = ledger::records()?;
-    let name_width = found.iter().map(|record| record.name.len()).max();
+    let name_width = found.iter().map(|record| shown_name(record).len()).max();
     let id_width = found.iter().map(|record| record.id.as_str().len()).max();
     let (name_width, id_width) = (name_width.unwrap_or(0), id_width.unwrap_or(0));
     for record in &found {
-        let (name, id) = (&record.name, record.id.as_str());
+        let (name, id) = (shown_name(record), record.id.as_str());
         println!(
             "{name:name_width$}{COLUMN_GAP}{id:id_width$}{COLUMN_GAP}{}",
             record.provider
@@ -182,4 +233,8 @@ pub fn list() -> Result<(), Box<dyn Error>> {
     } else {
         Err(UnreadableRecords.into())
     }
+}
+
+fn shown_name(record: &Record) -> &str {
+    record.name.as_deref().unwrap_or(DISPOSABLE_MARK)
 }

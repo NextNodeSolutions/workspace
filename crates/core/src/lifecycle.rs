@@ -1,6 +1,8 @@
 use crate::port::{Ledger, Profile, Provider, Shell};
 use crate::{Error, Failure, Reason, VmId, VmSpec};
 
+const DISPOSABLE: &str = "a disposable VM";
+
 /// # Errors
 ///
 /// [`Error::Setup`] when the account is not ready.
@@ -55,6 +57,20 @@ pub fn attach(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
 
 /// # Errors
 ///
+/// [`Error::Snapshot`] when nothing is saved under `name`, and
+/// [`Error::Gone`] when the provider no longer has the VM.
+pub fn snapshot(provider: &dyn Provider, vm: &VmId, name: &str) -> Result<(), Error> {
+    provider.snapshot(vm, name).map_err(|failure| {
+        failure.into_error(Some(vm), |cause| Error::Snapshot {
+            vm: vm.clone(),
+            name: name.to_owned(),
+            cause,
+        })
+    })
+}
+
+/// # Errors
+///
 /// [`Error::Stop`] when the provider fails to stop the VM. A VM the provider
 /// no longer has counts as stopped.
 pub fn stop(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
@@ -88,7 +104,7 @@ pub fn remove(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result
 fn create(provider: &dyn Provider, ledger: &dyn Ledger, spec: &VmSpec) -> Result<VmId, Error> {
     let vm = provider.create(spec).map_err(|failure| {
         failure.into_error(None, |cause| Error::Create {
-            name: spec.name().to_owned(),
+            name: spec.name().unwrap_or(DISPOSABLE).to_owned(),
             cause,
         })
     })?;
