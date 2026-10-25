@@ -65,10 +65,20 @@ pub(crate) fn extract(shell: &dyn Shell, directory: &str, archive: &[u8]) -> Res
 }
 
 pub(crate) fn write_file(shell: &dyn Shell, path: &str, bytes: &[u8]) -> Result<(), Cause> {
-    let script = format!(
-        "set -euo pipefail\nmkdir -p \"$(dirname \"$HOME/{path}\")\"\ncat > \"$HOME/{path}.tmp\"\nmv \"$HOME/{path}.tmp\" \"$HOME/{path}\""
-    );
+    let script = format!("set -euo pipefail\n{}", write_commands(path));
     shell.run(&script, bytes).map(drop)
+}
+
+/// Like `write_file`, for a file only its owner may read.
+pub(crate) fn write_secret_file(shell: &dyn Shell, path: &str, bytes: &[u8]) -> Result<(), Cause> {
+    let script = format!("set -euo pipefail\numask 077\n{}", write_commands(path));
+    shell.run(&script, bytes).map(drop)
+}
+
+fn write_commands(path: &str) -> String {
+    format!(
+        "mkdir -p \"$(dirname \"$HOME/{path}\")\"\ncat > \"$HOME/{path}.tmp\"\nmv \"$HOME/{path}.tmp\" \"$HOME/{path}\""
+    )
 }
 
 pub(crate) fn export_secrets(shell: &dyn Shell, secrets: &[Secret]) -> Result<(), Cause> {

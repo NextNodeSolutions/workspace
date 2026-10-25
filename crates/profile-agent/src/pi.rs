@@ -9,9 +9,11 @@ use workspace_core::Cause;
 use workspace_core::port::{Profile, Shell};
 
 use crate::error::AgentError;
-use crate::options::{Identifier, Version};
+use crate::infisical::Secret;
+use crate::oauth::OauthSpec;
+use crate::options::{Identifier, SecretName, Version};
 use crate::secrets::{SecretSettings, SecretSpec};
-use crate::{archive, json, local, remote};
+use crate::{archive, json, local, pi_auth, remote};
 
 const NAME: &str = "pi";
 
@@ -24,6 +26,8 @@ const DEFAULT_SECRETS: &[&str] = &["GITHUB_TOKEN"];
 const VERSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 const ADAPTER_SETTINGS: &str = "mcp-adapter.json";
+
+const AUTH_FILE: &str = "auth.json";
 
 /// The VM has no keychain, so the MCP adapter keeps OAuth sign-ins in an
 /// encrypted file instead, under a key that stays on the VM.
@@ -40,13 +44,18 @@ if ! grep -q '^export PI_MCP_ADAPTER_OAUTH_FILE_KEY=' "$file"; then
 fi
 "#;
 
+/// Earlier versions of this profile mirrored Pi's own sign-in file.
+const FORGET_SIGN_INS_SCRIPT: &str = r#"set -euo pipefail
+rm -f "$HOME/.pi/agent/mcp-auth.json"
+"#;
+
 /// What Pi reads from its agent directory, as opposed to what it writes
 /// there: sessions, caches, trust decisions and installed dependencies stay.
+/// The auth file is written apart, without this machine's OAuth sign-ins.
 const MIRRORED: &[&str] = &[
     "AGENTS.md",
     "ARCHITECTURE.md",
     "agents",
-    "auth.json",
     "bin",
     "context-budget.json",
     "extensions",
@@ -54,7 +63,6 @@ const MIRRORED: &[&str] = &[
     "keybindings.json",
     "lazy-load.json",
     "mcp-adapter.json",
-    "mcp-auth.json",
     "mcp.json",
     "models.json",
     "npm",
@@ -104,6 +112,12 @@ pub struct PiOptions {
     /// [default: `GITHUB_TOKEN`]
     #[arg(long = "pi-secrets", value_name = "NAMES", value_delimiter = ',')]
     secrets: Option<Vec<SecretSpec>>,
+
+    /// Sign-ins to give the VM from Infisical secrets, comma-separated:
+    /// `codex=SECRET` for Codex, `SERVER=SECRET` for an MCP server
+    /// [default: none]
+    #[arg(long = "pi-oauth", value_name = "TARGET=SECRET", value_delimiter = ',')]
+    oauth: Option<Vec<OauthSpec>>,
 }
 
 impl PiOptions {
@@ -114,6 +128,7 @@ impl PiOptions {
             infisical_project: self.infisical_project.or(fallback.infisical_project),
             infisical_env: self.infisical_env.or(fallback.infisical_env),
             secrets: self.secrets.or(fallback.secrets),
+            oauth: self.oauth.or(fallback.oauth),
         }
     }
 }
@@ -121,6 +136,16 @@ impl PiOptions {
 pub struct Pi {
     version: Option<Version>,
     secrets: SecretSettings,
+    oauth: Vec<OauthSpec>,
+}
+
+struct Prepared {
+    version: Version,
+    archive: Vec<u8>,
+    adapter_settings: Vec<u8>,
+    auth: Vec<u8>,
+    sign_ins: Option<Vec<u8>>,
+    secrets: Vec<Secret>,
 }
 
 impl Pi {
@@ -134,7 +159,27 @@ impl Pi {
                 options.secrets,
                 DEFAULT_SECRETS,
             ),
+            oauth: options.oauth.unwrap_or_default(),
         }
+    }
+
+    fn gather(&self) -> Result<Prepared, AgentError> {
+        let version = match &self.version {
+            Some(version) => version.clone(),
+            None => local_version()?,
+        };
+        let sign_in_secrets: Vec<SecretName> =
+            self.oauth.iter().map(|spec| spec.secret.clone()).collect();
+        let fetched = self.secrets.fetch_with(NAME, &sign_in_secrets)?;
+        let directory = local::home()?.join(DIRECTORY);
+        Ok(Prepared {
+            version,
+            archive: archive::pack(&directory, MIRRORED)?,
+            adapter_settings: adapter_settings(&directory.join(ADAPTER_SETTINGS))?,
+            auth: pi_auth::auth_file(&directory.join(AUTH_FILE), &self.oauth, &fetched.files)?,
+            sign_ins: pi_auth::mcp_sign_ins(&self.oauth, &fetched.files)?,
+            secrets: fetched.environment,
+        })
     }
 }
 
@@ -146,26 +191,24 @@ impl Profile for Pi {
     /// Everything local is gathered first, so a missing secret or file fails
     /// before the VM changes.
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause> {
-        let version = match &self.version {
-            Some(version) => version.clone(),
-            None => local_version()?,
-        };
-        let secrets = self.secrets.fetch(NAME)?;
-        let directory = local::home()?.join(DIRECTORY);
-        let archive = archive::pack(&directory, MIRRORED)?;
-        let adapter_settings = adapter_settings(&directory.join(ADAPTER_SETTINGS))?;
+        let prepared = self.gather()?;
         remote::hook(shell)?;
-        shell.run(&install_script(&version), &[])?;
-        remote::extract(shell, DIRECTORY, &archive)?;
+        shell.run(&install_script(&prepared.version), &[])?;
+        remote::extract(shell, DIRECTORY, &prepared.archive)?;
         remote::write_file(
             shell,
             &format!("{DIRECTORY}/{ADAPTER_SETTINGS}"),
-            &adapter_settings,
+            &prepared.adapter_settings,
         )?;
+        remote::write_secret_file(shell, &format!("{DIRECTORY}/{AUTH_FILE}"), &prepared.auth)?;
+        shell.run(FORGET_SIGN_INS_SCRIPT, &[])?;
         shell.run(DEPENDENCIES_SCRIPT, &[])?;
         shell.run(OAUTH_KEY_SCRIPT, &[])?;
-        if !secrets.is_empty() {
-            remote::export_secrets(shell, &secrets)?;
+        if let Some(sign_ins) = &prepared.sign_ins {
+            shell.run(pi_auth::MCP_SIGN_IN_SCRIPT, sign_ins)?;
+        }
+        if !prepared.secrets.is_empty() {
+            remote::export_secrets(shell, &prepared.secrets)?;
         }
         Ok(())
     }

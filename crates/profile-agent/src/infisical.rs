@@ -17,6 +17,7 @@ pub(crate) struct Source {
     pub(crate) names: Vec<SecretName>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Secret {
     pub(crate) name: SecretName,
     pub(crate) value: String,

@@ -79,16 +79,37 @@ impl SecretSettings {
         }
     }
 
-    /// Infisical is called only when a secret comes from it, so a profile
-    /// that exports none, or only local ones, needs no project.
     pub(crate) fn fetch(&self, profile: &'static str) -> Result<Vec<Secret>, AgentError> {
+        self.fetch_with(profile, &[])
+            .map(|fetched| fetched.environment)
+    }
+
+    /// Infisical is called only when a secret comes from it, so a profile
+    /// that exports none, or only local ones, needs no project. The `files`
+    /// come from Infisical too, but fill files on the VM rather than its
+    /// environment, so they are returned apart.
+    pub(crate) fn fetch_with(
+        &self,
+        profile: &'static str,
+        files: &[SecretName],
+    ) -> Result<Fetched, AgentError> {
         let (local, remote): (Vec<_>, Vec<_>) = self.specs.iter().partition(|spec| spec.is_local);
-        let mut secrets = local
-            .into_iter()
-            .map(|spec| from_environment(&spec.name))
-            .collect::<Result<Vec<_>, _>>()?;
-        if remote.is_empty() {
-            return Ok(secrets);
+        let mut fetched = Fetched {
+            environment: local
+                .into_iter()
+                .map(|spec| from_environment(&spec.name))
+                .collect::<Result<Vec<_>, _>>()?,
+            files: Vec::new(),
+        };
+        let mut names: Vec<SecretName> = remote.iter().map(|spec| spec.name.clone()).collect();
+        let only_files: Vec<SecretName> = files
+            .iter()
+            .filter(|name| !names.contains(name))
+            .cloned()
+            .collect();
+        names.extend(only_files);
+        if names.is_empty() {
+            return Ok(fetched);
         }
         let project = self
             .project
@@ -97,11 +118,23 @@ impl SecretSettings {
         let source = Source {
             project,
             environment: self.environment.clone(),
-            names: remote.into_iter().map(|spec| spec.name.clone()).collect(),
+            names,
         };
-        secrets.extend(infisical::fetch(&source)?);
-        Ok(secrets)
+        for secret in infisical::fetch(&source)? {
+            if files.contains(&secret.name) {
+                fetched.files.push(secret.clone());
+            }
+            if remote.iter().any(|spec| spec.name == secret.name) {
+                fetched.environment.push(secret);
+            }
+        }
+        Ok(fetched)
     }
+}
+
+pub(crate) struct Fetched {
+    pub(crate) environment: Vec<Secret>,
+    pub(crate) files: Vec<Secret>,
 }
 
 fn from_environment(name: &SecretName) -> Result<Secret, AgentError> {

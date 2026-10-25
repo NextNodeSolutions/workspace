@@ -77,6 +77,11 @@ pub(crate) enum AgentError {
         "this machine's environment has no `{name}`: export it, or drop `env:{name}` from the profile's secrets"
     )]
     MissingEnvironment { name: String },
+
+    #[error(
+        "the secret `{name}` does not hold a sign-in as the token sync job writes it: run the sync on this machine, or drop the pair from the profile's oauth option"
+    )]
+    NotASignIn { name: String },
 }
 
 fn on_new_line(text: &str) -> String {
