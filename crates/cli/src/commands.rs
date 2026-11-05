@@ -1,13 +1,11 @@
 use std::error::Error;
-use std::io::{self, IsTerminal};
 use std::path::Path;
 
-use workspace_core::port::{Ledger, Provider};
-use workspace_core::{Cause, Error as CoreError, VmId, VmSpec, lifecycle};
+use workspace_core::lifecycle;
 
 use crate::ProviderArgs;
 use crate::adapters;
-use crate::config::{self, Config, Profiles, Providers};
+use crate::config::{self, Config, Providers};
 use crate::ledger::{self, FileLedger, Record, Records};
 
 const COLUMN_GAP: &str = "  ";
@@ -15,45 +13,10 @@ const COLUMN_GAP: &str = "  ";
 const DISPOSABLE_MARK: &str = "-";
 
 #[derive(Debug, thiserror::Error)]
-#[error("no terminal to open a shell in: pass -d to start the VM without one")]
-struct NoTerminal;
-
-#[derive(Debug, thiserror::Error)]
-#[error("no provider chosen: run `workspace setup`, or pass --provider")]
-struct NotSetUp;
-
-#[derive(Debug, thiserror::Error)]
-#[error(
-    "{provider} is not ready to start VMs: run `workspace setup --provider {provider}`, with the same provider options as here"
-)]
-struct NeedsSetup {
-    provider: String,
-    #[source]
-    cause: Cause,
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("`{name}` ({vm}) no longer exists on its provider: `workspace remove {name}` forgets it")]
-struct Vanished {
-    name: String,
-    vm: VmId,
-    #[source]
-    cause: Cause,
-}
-
-#[derive(Debug, thiserror::Error)]
 #[error(
     "the records above cannot be read, so their VMs may run unlisted: fix or delete each file once its VM is gone"
 )]
 struct UnreadableRecords;
-
-#[derive(Debug, thiserror::Error)]
-#[error("`{name}` runs on {recorded}, not {asked}: drop --provider, or pick another name")]
-struct OtherProvider {
-    name: String,
-    recorded: String,
-    asked: String,
-}
 
 pub fn setup(
     args: ProviderArgs,
@@ -76,105 +39,6 @@ pub fn setup(
         path.display()
     );
     Ok(())
-}
-
-pub fn start(
-    name: Option<&str>,
-    args: ProviderArgs,
-    profile_options: Profiles,
-    file: Config,
-    profile_names: &[String],
-    detach: bool,
-) -> Result<(), Box<dyn Error>> {
-    let has_terminal = io::stdin().is_terminal() && io::stdout().is_terminal();
-    if !detach && !has_terminal {
-        return Err(NoTerminal.into());
-    }
-    let spec = match name {
-        Some(name) => VmSpec::named(name)?,
-        None => VmSpec::disposable(),
-    };
-    let on_wait =
-        || eprintln!("Another `workspace start` of that name is running: waiting for it.");
-    let lock = spec
-        .name()
-        .map(|name| ledger::lock_name(name, on_wait))
-        .transpose()?;
-    let recorded = spec.name().map(ledger::named).transpose()?.flatten();
-    let ProviderArgs { provider, options } = args;
-    let (provider_name, recorded) = pick_provider(&spec, recorded, provider, file.provider)?;
-    let provider = adapters::provider(&provider_name, options.or(file.providers))?;
-    let profile_options = profile_options.or(file.profiles);
-    let profiles = profile_names
-        .iter()
-        .map(|profile| adapters::profile(profile, profile_options.clone()))
-        .collect::<Result<Vec<_>, _>>()?;
-    let ledger = FileLedger::for_provider(&provider_name)?;
-    let with_next_step = |error| next_step(error, &provider_name, &spec);
-    let vm = lifecycle::start(provider.as_ref(), &ledger, &profiles, &spec, recorded)
-        .map_err(with_next_step)?;
-    drop(lock);
-    if detach {
-        println!("{vm}");
-        if spec.is_disposable() {
-            eprintln!(
-                "{vm} is disposable: `workspace remove {vm}` deletes it, and its provider deletes it once its lifetime runs out."
-            );
-        }
-        return Ok(());
-    }
-    lifecycle::attach(provider.as_ref(), &vm).map_err(with_next_step)?;
-    leave(provider.as_ref(), &ledger, &vm, &spec)
-}
-
-fn leave(
-    provider: &dyn Provider,
-    ledger: &dyn Ledger,
-    vm: &VmId,
-    spec: &VmSpec,
-) -> Result<(), Box<dyn Error>> {
-    let Some(name) = spec.name() else {
-        lifecycle::remove(provider, ledger, vm)?;
-        eprintln!("{vm} was disposable, so it is deleted.");
-        return Ok(());
-    };
-    eprintln!("{name} is still running: `workspace stop {name}` stops it.");
-    Ok(())
-}
-
-fn next_step(error: CoreError, provider: &str, spec: &VmSpec) -> Box<dyn Error> {
-    match error {
-        CoreError::Setup { cause } => NeedsSetup {
-            provider: provider.to_owned(),
-            cause,
-        }
-        .into(),
-        CoreError::Gone { vm, cause } => Vanished {
-            name: spec.name().unwrap_or(vm.as_str()).to_owned(),
-            vm,
-            cause,
-        }
-        .into(),
-        error => error.into(),
-    }
-}
-
-fn pick_provider(
-    spec: &VmSpec,
-    recorded: Option<Record>,
-    asked: Option<String>,
-    default: Option<String>,
-) -> Result<(String, Option<VmId>), Box<dyn Error>> {
-    match (recorded, asked) {
-        (Some(record), Some(asked)) if asked != record.provider => Err(OtherProvider {
-            name: spec.name().unwrap_or_default().to_owned(),
-            recorded: record.provider,
-            asked,
-        }
-        .into()),
-        (Some(record), _) => Ok((record.provider, Some(record.id))),
-        (None, asked) => Ok((asked.or(default).ok_or(NotSetUp)?, None)),
-    }
 }
 
 /// A disposable VM has no disk to keep, so stopping it deletes it.

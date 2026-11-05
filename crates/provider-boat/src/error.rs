@@ -1,7 +1,7 @@
 use std::io;
 use std::string::FromUtf8Error;
 
-use workspace_core::{Failure, Reason};
+use workspace_core::{Cause, Failure, Reason};
 
 use crate::options::{BoatName, InvalidOption, MachineType};
 use crate::sandbox::State;
@@ -93,6 +93,9 @@ pub(crate) enum BoatError {
 
     #[error("the script failed on the sandbox: {reason}{}", on_new_line(.stderr))]
     Script { reason: String, stderr: String },
+
+    #[error("the session could not run on this terminal")]
+    Terminal(#[source] Cause),
 
     #[error("the script printed output that is not UTF-8")]
     NotUtf8(#[source] FromUtf8Error),

@@ -1,4 +1,4 @@
-use crate::port::{Ledger, Profile, Provider, Shell};
+use crate::port::{Ledger, Profile, Provider, SessionEnd, Shell, Terminal};
 use crate::{Error, Failure, Reason, VmId, VmSpec};
 
 const DISPOSABLE: &str = "a disposable VM";
@@ -46,8 +46,13 @@ pub fn start(
 ///
 /// [`Error::Attach`] when no session could be opened, and [`Error::Gone`]
 /// when the provider no longer has the VM.
-pub fn attach(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
-    provider.attach(vm).map_err(|failure| {
+pub fn attach(
+    provider: &dyn Provider,
+    vm: &VmId,
+    command: &[String],
+    terminal: &dyn Terminal,
+) -> Result<SessionEnd, Error> {
+    provider.attach(vm, command, terminal).map_err(|failure| {
         failure.into_error(Some(vm), |cause| Error::Attach {
             vm: vm.clone(),
             cause,

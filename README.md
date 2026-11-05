@@ -1,6 +1,6 @@
 # workspace
 
-`workspace` starts VMs on a cloud provider, sets them up with profiles, then stops or deletes them. A VM is disposable unless you name it: it is deleted when you leave it. A named VM is kept, so a later `start` resumes it. Every VM is recorded on your disk, so a VM that runs and costs money cannot be lost.
+`workspace` starts VMs on a cloud provider, sets them up with profiles, then stops or deletes them. A VM is disposable unless you name it: it is deleted when you leave it. A named VM is kept, so a later `start` resumes it. A session that goes quiet puts its VM away. Every VM is recorded on your disk, so a VM that runs and costs money cannot be lost.
 
 ## Quick start
 
@@ -13,6 +13,7 @@ workspace start                       # a disposable VM: a shell on it, deleted 
 workspace start --profile pi          # the same, with this machine's Pi installed on it
 workspace start -d                    # prints its id instead; it lives until removed or its lifetime ends
 workspace start dev                   # a kept VM named dev: created now, resumed by later starts
+workspace start dev -- pi             # runs pi on it; the VM stops when pi exits or the session goes quiet
 workspace stop dev                    # stops the VM and keeps its disk
 workspace remove dev                  # deletes the VM and its data for good
 workspace list                        # shows each recorded VM
@@ -37,9 +38,9 @@ stateDiagram-v2
         state "Named, stopped" as Stopped
         [*] --> NoVm
         NoVm --> Disposable: workspace start
-        Disposable --> NoVm: leaving the shell, stop, remove, or the lifetime runs out
+        Disposable --> NoVm: leaving the shell, an idle session, stop, remove, or the lifetime runs out
         NoVm --> Running: workspace start NAME
-        Running --> Stopped: workspace stop
+        Running --> Stopped: workspace stop, or an idle session
         Stopped --> Running: workspace start NAME
         Running --> NoVm: workspace remove
         Stopped --> NoVm: workspace remove
@@ -49,9 +50,10 @@ stateDiagram-v2
 ```
 
 1. `setup` prepares a provider account once, for example by creating what new VMs start from, then makes it the default provider. Running it again is safe.
-2. `start` creates a VM and records it on your disk. It waits until the VM answers, applies each profile in order, then opens a shell on it. With `-d`, it prints the VM id instead, for scripts.
+2. `start` creates a VM and records it on your disk. It waits until the VM answers, applies each profile in order, then opens a shell on it, or runs the command given after `--`. With `-d`, it prints the VM id instead, for scripts.
    - Without a name, the VM is disposable: leaving the shell deletes it, and so does `stop`. With `-d`, it lives until `remove`, or until the provider's lifetime for it runs out, which deletes it too.
    - With a name, the VM is kept: leaving the shell leaves it running, and a later `start` of that name resumes it instead of creating another.
+   - The session runs through a terminal of workspace's own, so it sees what passes: your keystrokes one way, the VM's output the other. When nothing passes for the idle duration, which `workspace start --help` gives and `--idle` or the `idle` config key change, the session ends and the VM is put away: a named one is stopped with its disk kept, a disposable one deleted. Typing counts as activity, so a prompt you are writing never trips it, and `--idle off` turns it off. A command given after `--` puts the VM away the same way when it ends.
 3. `stop` stops a named VM. Its disk and its record stay, so `start` can resume it.
 4. `remove` deletes the VM and its data, then its record.
 5. `snapshot` saves a VM under a name on the provider. Once the provider option that names a snapshot points at it, new VMs start from it, with everything the profiles installed already there, so a disposable VM is ready in seconds.

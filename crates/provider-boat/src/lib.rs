@@ -10,7 +10,7 @@ mod shell;
 use std::time::Duration;
 
 use serde::de::IgnoredAny;
-use workspace_core::port::{Provider, Shell};
+use workspace_core::port::{Provider, SessionEnd, Shell, Terminal};
 use workspace_core::{Failure, VmId, VmSpec};
 
 use error::BoatError;
@@ -101,8 +101,13 @@ impl Provider for Boat {
         Ok(Box::new(BoatShell::new(vm.clone())))
     }
 
-    fn attach(&self, vm: &VmId) -> Result<(), Failure> {
-        Ok(shell::attach(vm)?)
+    fn attach(
+        &self,
+        vm: &VmId,
+        command: &[String],
+        terminal: &dyn Terminal,
+    ) -> Result<SessionEnd, Failure> {
+        Ok(shell::attach(vm, command, terminal)?)
     }
 
     fn stop(&self, vm: &VmId) -> Result<(), Failure> {

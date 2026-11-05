@@ -1,19 +1,12 @@
 use std::fmt;
 use std::str::FromStr;
+use std::time::Duration;
 
 use clap::{Args, ValueEnum};
 use serde::Deserialize;
+use workspace_core::duration;
 
-const SECONDS_PER_MINUTE: u64 = 60;
-const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
-const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
-
-const UNITS: [(&str, u64); 4] = [
-    ("d", SECONDS_PER_DAY),
-    ("h", SECONDS_PER_HOUR),
-    ("m", SECONDS_PER_MINUTE),
-    ("s", 1),
-];
+const SECONDS_PER_HOUR: u64 = 60 * 60;
 
 const DEFAULT_MACHINE_TYPE: MachineType = MachineType::Small;
 
@@ -120,18 +113,9 @@ impl FromStr for Ttl {
     type Err = InvalidOption;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let invalid = || InvalidOption::Ttl(text.to_owned());
-        let digits = text
-            .find(|c: char| !c.is_ascii_digit())
-            .ok_or_else(invalid)?;
-        let (count, suffix) = text.split_at(digits);
-        let (_, unit) = UNITS
-            .iter()
-            .find(|(name, _)| *name == suffix)
-            .ok_or_else(invalid)?;
-        let count: u64 = count.parse().map_err(|_| invalid())?;
-        let seconds = count.checked_mul(*unit).filter(|&seconds| seconds > 0);
-        seconds.map(Self).ok_or_else(invalid)
+        duration::parse(text)
+            .map(|duration| Self(duration.as_secs()))
+            .ok_or_else(|| InvalidOption::Ttl(text.to_owned()))
     }
 }
 
@@ -145,11 +129,7 @@ impl TryFrom<String> for Ttl {
 
 impl fmt::Display for Ttl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (name, unit) = UNITS
-            .iter()
-            .find(|(_, unit)| self.0.is_multiple_of(*unit))
-            .expect("every count of seconds divides by one second");
-        write!(formatter, "{}{name}", self.0 / unit)
+        formatter.write_str(&duration::show(Duration::from_secs(self.0)))
     }
 }
 

@@ -14,6 +14,8 @@ serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
+portable-pty.workspace = true
+crossterm.workspace = true
 
 [lints]
 workspace = true

@@ -196,16 +196,24 @@ sequenceDiagram
     autonumber
     actor You
     participant A as Boat adapter
+    participant T as the cli's terminal
     participant B as boat ssh
     participant S as Sandbox
-    A->>B: boat ssh ID, on your terminal
-    B->>S: opens a shell
-    You->>S: work in the shell
-    You->>B: leave the shell
-    B-->>A: exits, and the sandbox keeps running
+    A->>T: run boat ssh ID, or boat ssh ID -t -- COMMAND
+    T->>B: starts it in a pseudo-terminal
+    B->>S: opens a shell, or runs the command
+    You->>S: work in the session
+    alt you leave, or the command ends
+        B-->>T: exits
+        T-->>A: left, with the exit status
+    else nothing passes for the idle duration
+        T->>B: ends it
+        T-->>A: idle
+    end
+    Note over A,S: the sandbox keeps running, and the cli decides what becomes of it
 ```
 
-`boat ssh` runs without `--json` here, since its output is the session you read. It has no time limit, since the session lasts as long as you want. Its exit status is that of the last command typed in the session, and Boat's own refusals exit the same way. After a non-zero exit, the adapter therefore reads the state back: a sandbox that still runs means the session ended normally, and one that no longer runs means there was no session to give.
+`boat ssh` runs without `--json` here, since its output is the session you read, and the cli's terminal runs it rather than the adapter, so the idle rule holds for every provider. A command gets `-t`, since `boat ssh` gives a terminal to a shell but not to a command. The session has no time limit, since it lasts as long as you want, or until the cli's terminal ends it. Its exit status is that of the last command typed in the session, and Boat's own refusals exit the same way. After a non-zero exit, the adapter therefore reads the state back: a sandbox that still runs means the session ended normally, and one that no longer runs means there was no session to give.
 
 ### `Shell::run`, used by profiles
 

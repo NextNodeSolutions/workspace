@@ -1,6 +1,6 @@
 use std::process::{Output, Stdio};
 
-use workspace_core::port::Shell;
+use workspace_core::port::{SessionEnd, Shell, Terminal};
 use workspace_core::{Cause, VmId};
 
 use crate::cli::{self, Failure};
@@ -8,6 +8,11 @@ use crate::error::BoatError;
 use crate::{process, sandbox};
 
 const SSH: &str = "ssh";
+
+/// A command of its own needs a terminal of its own, as a shell gets by default.
+const TTY: &str = "-t";
+
+const END_OF_FLAGS: &str = "--";
 
 pub(crate) struct BoatShell {
     vm: VmId,
@@ -25,16 +30,29 @@ impl BoatShell {
     }
 }
 
-pub(crate) fn attach(vm: &VmId) -> Result<(), BoatError> {
-    let status = cli::interactive(SSH, &[vm.as_str()])
-        .status()
-        .map_err(BoatError::Spawn)?;
-    if status.success() {
-        return Ok(());
+/// A non-zero exit means either that the last command in the session failed
+/// or that Boat refused, so the state decides: a sandbox that still runs had
+/// a session, one that does not had none to give.
+pub(crate) fn attach(
+    vm: &VmId,
+    command: &[String],
+    terminal: &dyn Terminal,
+) -> Result<SessionEnd, BoatError> {
+    let mut args = vec![vm.as_str()];
+    if !command.is_empty() {
+        args.push(TTY);
+        args.push(END_OF_FLAGS);
+        args.extend(command.iter().map(String::as_str));
+    }
+    let end = terminal
+        .run(cli::interactive(SSH, &args))
+        .map_err(BoatError::Terminal)?;
+    if end != (SessionEnd::Left { success: false }) {
+        return Ok(end);
     }
     let state = sandbox::read(vm.as_str())?;
     if state.is_running() {
-        return Ok(());
+        return Ok(end);
     }
     Err(BoatError::NotRunning { state })
 }

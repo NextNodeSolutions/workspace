@@ -54,6 +54,16 @@ type = "small"
 
 `workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `start` asks you to run `setup`. A recorded VM always runs on the provider that created it, since its record names that provider, so `start` on a recorded name, `stop` and `remove` need neither.
 
+## Idle sessions
+
+The `idle` key at the top of the file, or `--idle` on `start`, says how long a session may pass nothing through the terminal before the VM is put away: a count and a unit, such as `5m` or `1h`, or `off`.
+
+```toml
+idle = "10m"
+```
+
+`workspace start --help` gives the default.
+
 ## Mistakes stop the command
 
 An unknown key, an unknown table or a bad value is an error, and the error points at the line. So a typo never goes unnoticed.

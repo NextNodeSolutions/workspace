@@ -8,6 +8,7 @@ use workspace_profile_agent::{ClaudeOptions, PiOptions};
 use workspace_provider_boat as boat;
 
 use crate::files::{self, FileError};
+use crate::terminal::Idle;
 use crate::xdg;
 
 const CONFIG_FILE: &str = "workspace/config.toml";
@@ -19,6 +20,7 @@ const PROVIDER_KEY: &str = "provider";
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub provider: Option<String>,
+    pub idle: Option<Idle>,
     #[serde(default)]
     pub providers: Providers,
     #[serde(default)]

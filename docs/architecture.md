@@ -27,8 +27,9 @@ flowchart LR
 
 | Port | Contract |
 | --- | --- |
-| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one, and reads from the spec whether the VM is disposable. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` hands your terminal to a shell on the VM until you leave it. `snapshot` saves the VM under a name, so new VMs can start from it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
+| `Provider` | `setup` prepares the account and is safe to repeat. `create` returns the VM id as soon as the provider assigns one, and reads from the spec whether the VM is disposable. `resume` makes a stopped VM run again, and succeeds when it already runs. `shell` waits until the VM answers. `attach` opens a session on the VM through the cli's terminal, a shell or the command given, and reports whether it was left or went idle. `snapshot` saves the VM under a name, so new VMs can start from it. `stop` stops the VM, and succeeds when it is already stopped or gone. `remove` deletes it, and succeeds when it is already gone. |
 | `Shell` | `run(script, stdin)` runs a script on the VM and returns its stdout. It fails on a non-zero exit. Secrets and files travel on stdin, never in the script. |
+| `Terminal` | `run(program)` runs the program a provider gives to open a session, on this machine's terminal, and says how the session ended: left, or idle. The cli implements it with a pseudo-terminal that relays every byte both ways and counts each as activity, so a provider never touches the terminal itself. |
 | `Profile` | `provision(shell)` sets up the VM. It must be safe to run twice. It sees only the shell, so it works the same on every provider. It may read this machine, such as the config of the agent it installs, and sends what it reads on stdin. |
 | `Ledger` | `record` runs before anything waits on the VM. `forget` runs once the VM is removed. The cli implements it with one file per VM. |
 
@@ -97,11 +98,15 @@ sequenceDiagram
     alt with -d
         CLI-->>You: prints the VM id
     else without -d
-        CLI->>Core: attach(id)
-        Core->>P: attach(id)
-        P-->>You: a shell on the VM, until you leave it
-        alt NAME given
+        CLI->>Core: attach(id, command, terminal)
+        Core->>P: attach(id, command, terminal)
+        P->>CLI: terminal.run(the provider's session program)
+        CLI-->>You: a shell on the VM, or the command, until you leave it or it goes idle
+        alt left the shell, NAME given
             CLI-->>You: says that the VM still runs
+        else idle, or the command ended, NAME given
+            CLI->>Core: stop(id)
+            CLI-->>You: says that the VM is stopped and its disk kept
         else disposable
             CLI->>Core: remove(id)
             CLI-->>You: says that the VM is deleted
@@ -115,7 +120,7 @@ A VM without a name is disposable. Its record has no name line, `list` shows `-`
 
 A recorded name never gets a second VM: `start` resumes the one it has, on the provider that created it. Starting a running VM therefore changes nothing. Two starts of one name at the same moment do not create two VMs either: the second waits until the first has recorded its VM and applied its profiles, then resumes that VM. The lock lasts only as long as the process that holds it, so an interrupted start never blocks the next one. Profiles apply each time you name them, since they are safe to repeat. Without `--profile`, nothing is applied again, and a resumed VM keeps on its disk what earlier profiles installed. Provider options apply when `start` creates a VM, and each provider's page says which ones also apply when it resumes one. `--provider` cannot move a recorded VM: naming another provider than its record's is an error.
 
-Without `-d`, `start` ends by handing your terminal to a shell on the VM. Leaving the shell leaves the VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
+Without `-d`, `start` ends by opening a session on the VM: a shell, or the command given after `--`. The session runs in a pseudo-terminal that the cli owns, so the cli sees every byte that passes, your keystrokes one way and the VM's output the other, and each one counts as activity. When nothing passes for the idle duration, the cli ends the session and puts the VM away: a named VM is stopped and keeps its disk, a disposable one is deleted. Typing is activity, so a prompt being written never trips it. A command given after `--` puts the VM away the same way when it ends, since that command was what the VM was for. Leaving a plain shell leaves a named VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
 
 ### `snapshot`
 

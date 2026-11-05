@@ -3,6 +3,9 @@ mod commands;
 mod config;
 mod files;
 mod ledger;
+mod relay;
+mod start;
+mod terminal;
 mod xdg;
 
 use std::error::Error;
@@ -11,6 +14,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use config::{Profiles, Providers};
+use terminal::Idle;
 
 #[derive(Parser)]
 #[command(about = "Start, stop and remove VMs on any provider")]
@@ -36,7 +40,8 @@ enum Command {
         provider: ProviderArgs,
     },
     /// Create a disposable VM, or create or resume the one recorded under
-    /// NAME, apply each profile, then open a shell on it; safe to run again
+    /// NAME, apply each profile, then open a shell on it, or run COMMAND
+    /// on it; safe to run again
     Start {
         /// Name to record the VM under, so that later starts resume it
         /// instead of creating another; 1 to 63 lowercase letters, digits
@@ -48,10 +53,19 @@ enum Command {
         /// Profile to apply once the VM answers; repeat it to apply several in order
         #[arg(long = "profile", value_name = "PROFILE")]
         profiles: Vec<String>,
+        /// Stop the VM, or delete a disposable one, once nothing has passed
+        /// through the terminal for this long, such as 5m or 1h; `off` never
+        /// does [default: 5m]
+        #[arg(long, value_name = "DURATION")]
+        idle: Option<Idle>,
         #[command(flatten)]
         provider: ProviderArgs,
         #[command(flatten)]
         profile_options: Profiles,
+        /// Command to run on the VM in place of a shell, after `--`; the VM
+        /// stops, or is deleted when disposable, once it ends
+        #[arg(last = true, value_name = "COMMAND")]
+        command: Vec<String>,
     },
     /// Stop a recorded VM on the provider that created it; it stays recorded
     Stop {
@@ -105,16 +119,26 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
             name,
             detach,
             profiles,
+            idle,
             provider,
             profile_options,
-        } => commands::start(
-            name.as_deref(),
-            provider,
-            profile_options,
-            file()?,
-            &profiles,
-            detach,
-        ),
+            command,
+        } => {
+            let file = file()?;
+            let session = start::Session {
+                detach,
+                idle: Idle::or_default(idle.or(file.idle)),
+                command,
+            };
+            start::run(
+                name.as_deref(),
+                provider,
+                profile_options,
+                file,
+                &profiles,
+                &session,
+            )
+        }
         Command::Stop { vm } => commands::stop(&vm, file()?.providers),
         Command::Remove { vm } => commands::remove(&vm, file()?.providers),
         Command::Snapshot { vm, name } => commands::snapshot(&vm, &name, file()?.providers),
