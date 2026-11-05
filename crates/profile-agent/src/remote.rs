@@ -75,6 +75,15 @@ pub(crate) fn write_secret_file(shell: &dyn Shell, path: &str, bytes: &[u8]) -> 
     shell.run(&script, bytes).map(drop)
 }
 
+/// Like `write_file`, for a program the VM runs.
+pub(crate) fn write_program(shell: &dyn Shell, path: &str, bytes: &[u8]) -> Result<(), Cause> {
+    let script = format!(
+        "set -euo pipefail\n{}\nchmod 755 \"$HOME/{path}\"",
+        write_commands(path)
+    );
+    shell.run(&script, bytes).map(drop)
+}
+
 fn write_commands(path: &str) -> String {
     format!(
         "mkdir -p \"$(dirname \"$HOME/{path}\")\"\ncat > \"$HOME/{path}.tmp\"\nmv \"$HOME/{path}.tmp\" \"$HOME/{path}\""

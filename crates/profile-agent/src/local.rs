@@ -1,5 +1,5 @@
 use std::env;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
@@ -22,17 +22,32 @@ pub(crate) fn home() -> Result<PathBuf, AgentError> {
 
 pub(crate) fn run(
     program: &'static str,
+    command: Command,
+    timeout: Duration,
+) -> Result<Vec<u8>, AgentError> {
+    run_with_input(program, command, &[], timeout)
+}
+
+/// Like `run`, with `input` on the program's stdin, so a value never becomes
+/// an argument another process on this machine could list.
+pub(crate) fn run_with_input(
+    program: &'static str,
     mut command: Command,
+    input: &[u8],
     timeout: Duration,
 ) -> Result<Vec<u8>, AgentError> {
     let mut child = command
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|source| AgentError::Spawn { program, source })?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
+    let input = input.to_vec();
+    // A program that exits early closes its end; the failed write then shows as its exit status.
+    let _ = thread::spawn(move || stdin.write_all(&input));
     let stdout = thread::spawn(move || capture(stdout));
     let stderr = thread::spawn(move || capture(stderr));
     let status = supervise(program, &mut child, timeout)?;

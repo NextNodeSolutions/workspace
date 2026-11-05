@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -10,16 +11,26 @@ use workspace_core::port::{Profile, Shell};
 
 use crate::error::AgentError;
 use crate::infisical::Secret;
-use crate::oauth::OauthSpec;
-use crate::options::{Identifier, SecretName, Version};
+use crate::options::{Identifier, Version};
 use crate::secrets::{SecretSettings, SecretSpec};
-use crate::{archive, json, local, pi_auth, remote};
+use crate::{archive, json, local, pi_auth, pi_scripts, remote, vault};
 
 const NAME: &str = "pi";
 
 const DIRECTORY: &str = ".pi/agent";
 
-const PACKAGE: &str = "@earendil-works/pi-coding-agent";
+/// Pi's secret-output extension imports the policy it shares with Claude's
+/// hook from `~/.config/agent-security`, and its provider keys resolve
+/// through the vault binding in `~/.config/agent-secrets`, so a VM needs
+/// both directories too.
+const SHARED_PARENT: &str = ".config";
+
+const SHARED: &[&str] = &["agent-security", "agent-secrets"];
+
+const BINDING: &str = ".config/agent-secrets/core-vault.json";
+
+/// The same program keeps this machine's and the VM's Codex token current.
+const PULL_SCRIPT: &str = ".local/bin/pi-token-pull";
 
 const DEFAULT_SECRETS: &[&str] = &["GITHUB_TOKEN"];
 
@@ -32,22 +43,6 @@ const AUTH_FILE: &str = "auth.json";
 /// The VM has no keychain, so the MCP adapter keeps OAuth sign-ins in an
 /// encrypted file instead, under a key that stays on the VM.
 const OAUTH_STORE_SETTING: (&str, &str) = ("oauthCredentialStore", "encrypted-file");
-
-const OAUTH_KEY_SCRIPT: &str = r#"set -euo pipefail
-umask 077
-dir="$HOME/.config/workspace"
-file="$dir/secrets.env"
-mkdir -p "$dir"
-touch "$file"
-if ! grep -q '^export PI_MCP_ADAPTER_OAUTH_FILE_KEY=' "$file"; then
-  printf "export PI_MCP_ADAPTER_OAUTH_FILE_KEY='%s'\n" "$(head -c 32 /dev/urandom | base64 -w0)" >> "$file"
-fi
-"#;
-
-/// Earlier versions of this profile mirrored Pi's own sign-in file.
-const FORGET_SIGN_INS_SCRIPT: &str = r#"set -euo pipefail
-rm -f "$HOME/.pi/agent/mcp-auth.json"
-"#;
 
 /// What Pi reads from its agent directory, as opposed to what it writes
 /// there: sessions, caches, trust decisions and installed dependencies stay.
@@ -81,16 +76,6 @@ const MIRRORED: &[&str] = &[
     "tsconfig.json",
 ];
 
-/// Pi installs its `npm:` packages itself under `npm/`, so that directory
-/// is left to it.
-const DEPENDENCIES_SCRIPT: &str = r#"set -euo pipefail
-cd "$HOME/.pi/agent"
-for dir in . packages/*/; do
-  [ -f "$dir/pnpm-lock.yaml" ] || continue
-  (cd "$dir" && pnpm install --frozen-lockfile --silent --config.strict-dep-builds=false)
-done
-"#;
-
 #[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Pi profile")]
 #[serde(deny_unknown_fields)]
@@ -112,12 +97,6 @@ pub struct PiOptions {
     /// [default: `GITHUB_TOKEN`]
     #[arg(long = "pi-secrets", value_name = "NAMES", value_delimiter = ',')]
     secrets: Option<Vec<SecretSpec>>,
-
-    /// Sign-ins to give the VM from Infisical secrets, comma-separated:
-    /// `codex=SECRET` for Codex, `SERVER=SECRET` for an MCP server
-    /// [default: none]
-    #[arg(long = "pi-oauth", value_name = "TARGET=SECRET", value_delimiter = ',')]
-    oauth: Option<Vec<OauthSpec>>,
 }
 
 impl PiOptions {
@@ -128,7 +107,6 @@ impl PiOptions {
             infisical_project: self.infisical_project.or(fallback.infisical_project),
             infisical_env: self.infisical_env.or(fallback.infisical_env),
             secrets: self.secrets.or(fallback.secrets),
-            oauth: self.oauth.or(fallback.oauth),
         }
     }
 }
@@ -136,15 +114,15 @@ impl PiOptions {
 pub struct Pi {
     version: Option<Version>,
     secrets: SecretSettings,
-    oauth: Vec<OauthSpec>,
 }
 
 struct Prepared {
     version: Version,
     archive: Vec<u8>,
+    shared: Vec<u8>,
     adapter_settings: Vec<u8>,
     auth: Vec<u8>,
-    sign_ins: Option<Vec<u8>>,
+    pull_script: Vec<u8>,
     secrets: Vec<Secret>,
 }
 
@@ -159,7 +137,6 @@ impl Pi {
                 options.secrets,
                 DEFAULT_SECRETS,
             ),
-            oauth: options.oauth.unwrap_or_default(),
         }
     }
 
@@ -168,17 +145,25 @@ impl Pi {
             Some(version) => version.clone(),
             None => local_version()?,
         };
-        let sign_in_secrets: Vec<SecretName> =
-            self.oauth.iter().map(|spec| spec.secret.clone()).collect();
-        let fetched = self.secrets.fetch_with(NAME, &sign_in_secrets)?;
-        let directory = local::home()?.join(DIRECTORY);
+        let mut secrets = self.secrets.fetch(NAME)?;
+        let home = local::home()?;
+        let directory = home.join(DIRECTORY);
+        let shared_parent = home.join(SHARED_PARENT);
+        for entry in SHARED {
+            let shared = shared_parent.join(entry);
+            if !shared.is_dir() {
+                return Err(AgentError::MissingShared(shared));
+            }
+        }
+        secrets.extend(vault::mint(&home.join(BINDING))?);
         Ok(Prepared {
             version,
             archive: archive::pack(&directory, MIRRORED)?,
+            shared: archive::pack(&shared_parent, SHARED)?,
             adapter_settings: adapter_settings(&directory.join(ADAPTER_SETTINGS))?,
-            auth: pi_auth::auth_file(&directory.join(AUTH_FILE), &self.oauth, &fetched.files)?,
-            sign_ins: pi_auth::mcp_sign_ins(&self.oauth, &fetched.files)?,
-            secrets: fetched.environment,
+            auth: pi_auth::auth_file(&directory.join(AUTH_FILE))?,
+            pull_script: pull_script(&home.join(PULL_SCRIPT))?,
+            secrets,
         })
     }
 }
@@ -193,23 +178,22 @@ impl Profile for Pi {
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause> {
         let prepared = self.gather()?;
         remote::hook(shell)?;
-        shell.run(&install_script(&prepared.version), &[])?;
+        shell.run(&pi_scripts::install(&prepared.version), &[])?;
+        shell.run(pi_scripts::INFISICAL_INSTALL, &[])?;
         remote::extract(shell, DIRECTORY, &prepared.archive)?;
+        remote::extract(shell, SHARED_PARENT, &prepared.shared)?;
         remote::write_file(
             shell,
             &format!("{DIRECTORY}/{ADAPTER_SETTINGS}"),
             &prepared.adapter_settings,
         )?;
         remote::write_secret_file(shell, &format!("{DIRECTORY}/{AUTH_FILE}"), &prepared.auth)?;
-        shell.run(FORGET_SIGN_INS_SCRIPT, &[])?;
-        shell.run(DEPENDENCIES_SCRIPT, &[])?;
-        shell.run(OAUTH_KEY_SCRIPT, &[])?;
-        if let Some(sign_ins) = &prepared.sign_ins {
-            shell.run(pi_auth::MCP_SIGN_IN_SCRIPT, sign_ins)?;
-        }
-        if !prepared.secrets.is_empty() {
-            remote::export_secrets(shell, &prepared.secrets)?;
-        }
+        shell.run(pi_scripts::FORGET_SIGN_INS, &[])?;
+        shell.run(pi_scripts::DEPENDENCIES, &[])?;
+        shell.run(pi_scripts::OAUTH_KEY, &[])?;
+        remote::export_secrets(shell, &prepared.secrets)?;
+        remote::write_program(shell, PULL_SCRIPT, &prepared.pull_script)?;
+        shell.run(pi_scripts::CODEX_PULL, &[])?;
         Ok(())
     }
 }
@@ -226,15 +210,8 @@ fn adapter_settings(path: &Path) -> Result<Vec<u8>, AgentError> {
     })
 }
 
-fn install_script(version: &Version) -> String {
-    let version = version.as_str();
-    format!(
-        r#"set -euo pipefail
-if [ "$(pi --version 2>/dev/null || true)" != "{version}" ]; then
-  npm install -g --no-fund --no-audit "{PACKAGE}@{version}" >/dev/null
-fi
-"#
-    )
+fn pull_script(path: &Path) -> Result<Vec<u8>, AgentError> {
+    fs::read(path).map_err(|_| AgentError::MissingPullScript(path.to_owned()))
 }
 
 fn local_version() -> Result<Version, AgentError> {

@@ -63,6 +63,12 @@ pub(crate) enum AgentError {
     #[error("none of the files to mirror exist under {}", .0.display())]
     NothingToMirror(PathBuf),
 
+    #[error(
+        "{} is missing, and Pi's extensions import from it: restore it before a VM can run Pi",
+        .0.display()
+    )]
+    MissingShared(PathBuf),
+
     #[error("cannot read {}", path.display())]
     Read {
         path: PathBuf,
@@ -79,9 +85,24 @@ pub(crate) enum AgentError {
     MissingEnvironment { name: String },
 
     #[error(
-        "the secret `{name}` does not hold a sign-in as the token sync job writes it: run the sync on this machine, or drop the pair from the profile's oauth option"
+        "{} names no `boats` client: record the read-only identity cloud VMs read the vault with as `clients.boats.identityId`",
+        .0.display()
     )]
-    NotASignIn { name: String },
+    NoVaultIdentity(PathBuf),
+
+    #[error("the Infisical CLI on this machine has no session: run `infisical login`")]
+    NoVaultSession,
+
+    #[error(
+        "the vault did not mint a client secret for the VM: check that the session can manage the `boats` identity of the binding"
+    )]
+    VaultRefused,
+
+    #[error(
+        "{} is missing, and the VM keeps its Codex token current with it: restore it before a VM can run Pi",
+        .0.display()
+    )]
+    MissingPullScript(PathBuf),
 }
 
 fn on_new_line(text: &str) -> String {

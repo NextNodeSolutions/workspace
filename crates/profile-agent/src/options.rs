@@ -45,7 +45,6 @@ macro_rules! checked_string {
 checked_string!(SecretName, is_secret_name);
 checked_string!(Identifier, is_identifier);
 checked_string!(Version, is_version);
-checked_string!(ServerName, is_identifier);
 
 fn is_secret_name(text: &str) -> bool {
     let mut chars = text.chars();
@@ -81,14 +80,4 @@ pub(crate) enum InvalidOption {
         "`{0}` is not a version: use ASCII letters, digits, dots, dashes and pluses, and do not start with a dash"
     )]
     Version(String),
-
-    #[error(
-        "`{0}` cannot name an MCP server: use ASCII letters, digits, dots, dashes and underscores, and do not start with a dash"
-    )]
-    ServerName(String),
-
-    #[error(
-        "`{0}` does not pair a sign-in with a secret: write `codex=SECRET` for Pi's OpenAI Codex sign-in, or `SERVER=SECRET` for an MCP server's"
-    )]
-    OauthSpec(String),
 }
