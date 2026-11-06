@@ -28,7 +28,13 @@ pub enum RelayError {
     Spawn(#[source] Cause),
 }
 
-/// Raw mode lasts exactly as long as the session, whatever ends it.
+/// What the session's program may have switched on and not switched off when
+/// it ends abruptly: the alternate screen, mouse reports, bracketed paste,
+/// focus reports, a hidden cursor and text attributes.
+const RESTORE: &[u8] = b"\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1004l\x1b[?25h\x1b[0m";
+
+/// Raw mode lasts exactly as long as the session, whatever ends it, and the
+/// terminal gets its modes back before the next prompt.
 struct RawMode;
 
 impl RawMode {
@@ -40,6 +46,8 @@ impl RawMode {
 
 impl Drop for RawMode {
     fn drop(&mut self) {
+        let mut stdout = io::stdout();
+        let _ = stdout.write_all(RESTORE).and_then(|()| stdout.flush());
         let _ = terminal::disable_raw_mode();
     }
 }
