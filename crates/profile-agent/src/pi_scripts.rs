@@ -70,7 +70,7 @@ mkdir -p "$HOME/.local/state"
 "$HOME/.pi/agent/bin/pi-token-pull"
 "#;
 
-/// The join key on stdin works once and is stored nowhere; a VM already on
+/// The join key on stdin works once and no copy of it is kept; a VM already on
 /// the tailnet leaves it unused. The checkout's `tailnet-link setup` joins
 /// when needed, then serves the VM's links.
 pub(crate) const TAILNET: &str = r#"set -euo pipefail
