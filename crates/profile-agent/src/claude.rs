@@ -35,16 +35,29 @@ fi
 #[serde(deny_unknown_fields)]
 pub struct ClaudeOptions {
     /// Infisical project the secrets come from
-    #[arg(long = "claude-infisical-project", value_name = "ID")]
+    #[arg(
+        id = "claude_infisical_project",
+        long = "claude-infisical-project",
+        value_name = "ID"
+    )]
     infisical_project: Option<Identifier>,
 
     /// Infisical environment the secrets come from [default: dev]
-    #[arg(long = "claude-infisical-env", value_name = "NAME")]
+    #[arg(
+        id = "claude_infisical_env",
+        long = "claude-infisical-env",
+        value_name = "NAME"
+    )]
     infisical_env: Option<Identifier>,
 
     /// Secrets to export in every shell on the VM, comma-separated
     /// [default: `CLAUDE_CODE_OAUTH_TOKEN,GITHUB_TOKEN`]
-    #[arg(long = "claude-secrets", value_name = "NAMES", value_delimiter = ',')]
+    #[arg(
+        id = "claude_secrets",
+        long = "claude-secrets",
+        value_name = "NAMES",
+        value_delimiter = ','
+    )]
     secrets: Option<Vec<SecretSpec>>,
 }
 

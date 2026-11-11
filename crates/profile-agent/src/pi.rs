@@ -37,20 +37,33 @@ const OAUTH_STORE_SETTING: (&str, &str) = ("oauthCredentialStore", "encrypted-fi
 pub struct PiOptions {
     /// Pi version to install on the VM [default: the version the agent
     /// repository pins]
-    #[arg(long = "pi-version", value_name = "VERSION")]
+    #[arg(id = "pi_version", long = "pi-version", value_name = "VERSION")]
     version: Option<Version>,
 
     /// Infisical project the secrets come from
-    #[arg(long = "pi-infisical-project", value_name = "ID")]
+    #[arg(
+        id = "pi_infisical_project",
+        long = "pi-infisical-project",
+        value_name = "ID"
+    )]
     infisical_project: Option<Identifier>,
 
     /// Infisical environment the secrets come from [default: dev]
-    #[arg(long = "pi-infisical-env", value_name = "NAME")]
+    #[arg(
+        id = "pi_infisical_env",
+        long = "pi-infisical-env",
+        value_name = "NAME"
+    )]
     infisical_env: Option<Identifier>,
 
     /// Secrets to export in every shell on the VM, comma-separated
     /// [default: `GITHUB_TOKEN`]
-    #[arg(long = "pi-secrets", value_name = "NAMES", value_delimiter = ',')]
+    #[arg(
+        id = "pi_secrets",
+        long = "pi-secrets",
+        value_name = "NAMES",
+        value_delimiter = ','
+    )]
     secrets: Option<Vec<SecretSpec>>,
 }
 
