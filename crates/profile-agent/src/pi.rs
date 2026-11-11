@@ -11,7 +11,7 @@ use crate::error::AgentError;
 use crate::infisical::Secret;
 use crate::options::{Identifier, Version};
 use crate::secrets::{SecretSettings, SecretSpec};
-use crate::{json, local, pi_auth, pi_scripts, remote, vault};
+use crate::{json, local, pi_auth, pi_scripts, remote, tailnet, vault};
 
 const NAME: &str = "pi";
 
@@ -37,21 +37,40 @@ const OAUTH_STORE_SETTING: (&str, &str) = ("oauthCredentialStore", "encrypted-fi
 pub struct PiOptions {
     /// Pi version to install on the VM [default: the version the agent
     /// repository pins]
-    #[arg(long = "pi-version", value_name = "VERSION")]
+    #[arg(id = "pi_version", long = "pi-version", value_name = "VERSION")]
     version: Option<Version>,
 
     /// Infisical project the secrets come from
-    #[arg(long = "pi-infisical-project", value_name = "ID")]
+    #[arg(
+        id = "pi_infisical_project",
+        long = "pi-infisical-project",
+        value_name = "ID"
+    )]
     infisical_project: Option<Identifier>,
 
     /// Infisical environment the secrets come from [default: dev]
-    #[arg(long = "pi-infisical-env", value_name = "NAME")]
+    #[arg(
+        id = "pi_infisical_env",
+        long = "pi-infisical-env",
+        value_name = "NAME"
+    )]
     infisical_env: Option<Identifier>,
 
     /// Secrets to export in every shell on the VM, comma-separated
     /// [default: `GITHUB_TOKEN`]
-    #[arg(long = "pi-secrets", value_name = "NAMES", value_delimiter = ',')]
+    #[arg(
+        id = "pi_secrets",
+        long = "pi-secrets",
+        value_name = "NAMES",
+        value_delimiter = ','
+    )]
     secrets: Option<Vec<SecretSpec>>,
+
+    /// Join the VM to this machine's tailnet, so that the links its agent
+    /// gives open on your devices
+    #[arg(id = "pi_tailnet", long = "pi-tailnet")]
+    #[serde(default, rename = "tailnet")]
+    joins_tailnet: bool,
 }
 
 impl PiOptions {
@@ -62,6 +81,7 @@ impl PiOptions {
             infisical_project: self.infisical_project.or(fallback.infisical_project),
             infisical_env: self.infisical_env.or(fallback.infisical_env),
             secrets: self.secrets.or(fallback.secrets),
+            joins_tailnet: self.joins_tailnet || fallback.joins_tailnet,
         }
     }
 }
@@ -69,6 +89,7 @@ impl PiOptions {
 pub struct Pi {
     version: Option<Version>,
     secrets: SecretSettings,
+    joins_tailnet: bool,
 }
 
 struct Prepared {
@@ -76,6 +97,7 @@ struct Prepared {
     adapter_settings: Vec<u8>,
     auth: Vec<u8>,
     secrets: Vec<Secret>,
+    join_key: Option<Vec<u8>>,
 }
 
 impl Pi {
@@ -89,6 +111,7 @@ impl Pi {
                 options.secrets,
                 DEFAULT_SECRETS,
             ),
+            joins_tailnet: options.joins_tailnet,
         }
     }
 
@@ -104,6 +127,7 @@ impl Pi {
             adapter_settings: adapter_settings(&directory.join(ADAPTER_SETTINGS))?,
             auth: pi_auth::auth_file(&directory.join(AUTH_FILE))?,
             secrets,
+            join_key: self.joins_tailnet.then(tailnet::join_key).transpose()?,
         })
     }
 }
@@ -115,11 +139,16 @@ impl Profile for Pi {
 
     /// Everything local is gathered first, so a missing secret or file fails
     /// before the VM changes. The checkout comes before the install, since
-    /// the repository pins the Pi version.
+    /// the repository pins the Pi version. The tailnet step follows the
+    /// checkout, which holds its command, and precedes the installs, since
+    /// the join key lasts minutes and they may take longer.
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause> {
         let prepared = self.gather()?;
         remote::hook(shell)?;
         shell.run(pi_scripts::CHECKOUT, &[])?;
+        if let Some(join_key) = &prepared.join_key {
+            shell.run(pi_scripts::TAILNET, join_key)?;
+        }
         shell.run(&pi_scripts::install(self.version.as_ref()), &[])?;
         shell.run(pi_scripts::INFISICAL_INSTALL, &[])?;
         remote::write_file(shell, BINDING, &prepared.binding)?;

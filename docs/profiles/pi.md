@@ -15,9 +15,15 @@ sequenceDiagram
     P->>M: infisical export, when the profile exports secrets
     P->>M: read the vault binding, mcp-adapter.json and auth.json
     P->>V: mint a client secret of the boats identity for this VM, with this machine's session
+    opt the tailnet option is set
+        P->>M: tailnet-link join-key, a key that joins one VM once
+    end
     Note over P,V: everything local is gathered first, so a missing file or secret fails before the VM changes
     P->>S: hook: PATH and secrets file sourced from .bashrc
     S->>G: clone pi-agent into ~/.pi/agent, or fast-forward the checkout
+    opt the tailnet option is set
+        P->>S: tailnet-link setup, with the join key on stdin
+    end
     P->>S: npm install -g pi at the pinned version, unless it already is
     P->>S: npm install -g the Infisical CLI, unless one is there
     P->>S: write the vault binding, on stdin
@@ -69,6 +75,18 @@ The access token reaches the VM from the vault, not from this machine. The machi
 
 The VM has no keychain, and without one Pi's MCP adapter refuses to remember anything and reports every OAuth server as an error at each start. The profile therefore sets `oauthCredentialStore` to `encrypted-file` in the VM's `mcp-adapter.json`, and makes a key for it once, kept in the secrets file as `PI_MCP_ADAPTER_OAUTH_FILE_KEY`. An MCP server that needs a sign-in gets one on the VM, with `/mcp-auth <server>` in Pi, which shows a link to open here and asks for the callback URL back; until then Pi notes once that the server needs a sign-in, and stays quiet about it in later sessions. A server whose access tokens live about an hour is a poor fit for that; a static token in its `headers` serves it better.
 
+## Links from the VM
+
+An agent on the VM gives links to what it made: a report, a directory, a dev server on `localhost`. A link names the machine that holds its target, so it opens on your laptop and phone only when the VM is on your tailnet. With `--pi-tailnet`, or `tailnet = true` in the config file, the profile puts the VM there.
+
+This machine's `tailnet-link join-key` mints the key, with the Tailscale OAuth client the vault binding points to, a credential limited to join keys for agent VMs. The key joins one machine, once, within minutes, as an ephemeral device under the tag the tailnet policy keeps for agent VMs. That tag is granted nothing, so your devices reach the VM and the VM reaches no other machine of the tailnet. `tailnet-link` owns the tag and those limits, and the profile only carries the key: it travels on stdin to `tailnet-link setup` in the VM's checkout, which installs Tailscale when it is missing, joins, and serves the VM's files and previews over HTTPS. No copy of the key is kept.
+
+The join comes right after the checkout, which holds the command, and before the installs. The key is then used within seconds of being minted, however long the installs take.
+
+Every run mints a new key. A VM that is still on the tailnet leaves it unused, and it expires. A VM whose device the tailnet dropped while it was stopped joins again with it.
+
+A machine without `tailnet-link` on `PATH`, or without a vault session, fails before the VM changes. A VM whose checkout predates the command fails at that step, before anything is installed. Run the profile again without the option, or once the repository holds the command.
+
 ## Secrets
 
 The profile exports secrets as environment variables in every shell on the VM, for the tools the agent runs, such as `gh` or an MCP server. A name such as `GITHUB_TOKEN` is read with the Infisical CLI of this machine, which must be signed in. A name with the `env:` prefix, such as `env:MY_TOKEN`, is read from this machine's environment instead, for what Infisical cannot hold. They are written to `~/.config/workspace/secrets.env` on the VM, mode 0600, which `.bashrc` sources first thing, so that the shells ssh starts get them too, and so does the hourly token pull. A rerun replaces the names it owns and leaves the others. When `GITHUB_TOKEN` is among them, `gh auth setup-git` makes Git use it.
@@ -79,6 +97,7 @@ The profile exports secrets as environment variables in every shell on the VM, f
 | `--pi-infisical-project` | `infisical_project` | The Infisical project the secrets come from. Required when a secret comes from Infisical. |
 | `--pi-infisical-env` | `infisical_env` | The Infisical environment, `dev` by default. |
 | `--pi-secrets` | `secrets` | The secrets to export, `GITHUB_TOKEN` by default. `secrets = []` in the config file exports none, and then Infisical's export is never called. |
+| `--pi-tailnet` | `tailnet` | Joins the VM to the tailnet and serves its links, as the section above says. Off by default. |
 
 ```toml
 [profiles.pi]

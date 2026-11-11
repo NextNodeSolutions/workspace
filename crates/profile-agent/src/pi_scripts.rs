@@ -70,6 +70,15 @@ mkdir -p "$HOME/.local/state"
 "$HOME/.pi/agent/bin/pi-token-pull"
 "#;
 
+/// The join key on stdin works once and no copy of it is kept; a VM already on
+/// the tailnet leaves it unused. The checkout's `tailnet-link setup` joins
+/// when needed, then serves the VM's links.
+pub(crate) const TAILNET: &str = r#"set -euo pipefail
+TS_AUTHKEY="$(cat)"
+export TS_AUTHKEY
+"$HOME/.pi/agent/skills/tailnet-links/scripts/tailnet-link" setup
+"#;
+
 /// Without a version option, the VM installs the version the checkout's
 /// `package.json` pins, since the extensions were written against it.
 pub(crate) fn install(version: Option<&Version>) -> String {
