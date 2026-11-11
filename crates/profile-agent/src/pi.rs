@@ -139,11 +139,16 @@ impl Profile for Pi {
 
     /// Everything local is gathered first, so a missing secret or file fails
     /// before the VM changes. The checkout comes before the install, since
-    /// the repository pins the Pi version.
+    /// the repository pins the Pi version. The tailnet step follows the
+    /// checkout, which holds its command, and precedes the installs, since
+    /// the join key lasts minutes and they may take longer.
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause> {
         let prepared = self.gather()?;
         remote::hook(shell)?;
         shell.run(pi_scripts::CHECKOUT, &[])?;
+        if let Some(join_key) = &prepared.join_key {
+            shell.run(pi_scripts::TAILNET, join_key)?;
+        }
         shell.run(&pi_scripts::install(self.version.as_ref()), &[])?;
         shell.run(pi_scripts::INFISICAL_INSTALL, &[])?;
         remote::write_file(shell, BINDING, &prepared.binding)?;
@@ -158,9 +163,6 @@ impl Profile for Pi {
         shell.run(pi_scripts::OAUTH_KEY, &[])?;
         remote::export_secrets(shell, &prepared.secrets)?;
         shell.run(pi_scripts::CODEX_PULL, &[])?;
-        if let Some(join_key) = &prepared.join_key {
-            shell.run(pi_scripts::TAILNET, join_key)?;
-        }
         Ok(())
     }
 }

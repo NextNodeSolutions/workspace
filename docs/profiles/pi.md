@@ -21,6 +21,9 @@ sequenceDiagram
     Note over P,V: everything local is gathered first, so a missing file or secret fails before the VM changes
     P->>S: hook: PATH and secrets file sourced from .bashrc
     S->>G: clone pi-agent into ~/.pi/agent, or fast-forward the checkout
+    opt the tailnet option is set
+        P->>S: tailnet-link setup, with the join key on stdin
+    end
     P->>S: npm install -g pi at the pinned version, unless it already is
     P->>S: npm install -g the Infisical CLI, unless one is there
     P->>S: write the vault binding, on stdin
@@ -31,9 +34,6 @@ sequenceDiagram
     P->>S: write the secrets file, with the VM's vault credentials, on stdin
     P->>S: install the hourly pull in the crontab, then pull the Codex token now
     S->>V: read the Codex access token, now and every hour
-    opt the tailnet option is set
-        P->>S: tailnet-link setup, with the join key on stdin
-    end
 ```
 
 Each step is one script over the provider's shell. A script fails on its first error, and the error says what failed on the VM.
@@ -81,9 +81,11 @@ An agent on the VM gives links to what it made: a report, a directory, a dev ser
 
 This machine's `tailnet-link join-key` mints the key, with the Tailscale OAuth client the vault binding points to, a credential limited to join keys for agent VMs. The key joins one machine, once, within minutes, as an ephemeral device under the tag the tailnet policy keeps for agent VMs. That tag is granted nothing, so your devices reach the VM and the VM reaches no other machine of the tailnet. `tailnet-link` owns the tag and those limits, and the profile only carries the key: it travels on stdin to `tailnet-link setup` in the VM's checkout, which installs Tailscale when it is missing, joins, and serves the VM's files and previews over HTTPS. The key is stored nowhere.
 
+The join comes right after the checkout, which holds the command, and before the installs. The key is then used within seconds of being minted, however long the installs take.
+
 Every run mints a new key. A VM that is still on the tailnet leaves it unused, and it expires. A VM whose device the tailnet dropped while it was stopped joins again with it.
 
-A machine without `tailnet-link` on `PATH`, or without a vault session, fails before the VM changes. A VM whose checkout predates the command fails at this last step, with everything else in place.
+A machine without `tailnet-link` on `PATH`, or without a vault session, fails before the VM changes. A VM whose checkout predates the command fails at that step, before anything is installed. Run the profile again without the option, or once the repository holds the command.
 
 ## Secrets
 
