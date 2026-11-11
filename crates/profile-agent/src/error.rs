@@ -52,22 +52,8 @@ pub(crate) enum AgentError {
     #[error("cannot locate the home directory: set HOME")]
     NoHome,
 
-    #[error(
-        "Pi is not installed on this machine, so there is no version to match: pass --pi-version, or set `version` under [profiles.pi]"
-    )]
-    NoLocalPi,
-
-    #[error("`pi --version` on this machine printed `{0}`, which is not a version")]
-    LocalVersion(String),
-
     #[error("none of the files to mirror exist under {}", .0.display())]
     NothingToMirror(PathBuf),
-
-    #[error(
-        "{} is missing, and Pi's extensions import from it: restore it before a VM can run Pi",
-        .0.display()
-    )]
-    MissingShared(PathBuf),
 
     #[error("cannot read {}", path.display())]
     Read {
@@ -97,12 +83,6 @@ pub(crate) enum AgentError {
         "the vault did not mint a client secret for the VM: check that the session can manage the `boats` identity of the binding"
     )]
     VaultRefused,
-
-    #[error(
-        "{} is missing, and the VM keeps its Codex token current with it: restore it before a VM can run Pi",
-        .0.display()
-    )]
-    MissingPullScript(PathBuf),
 }
 
 fn on_new_line(text: &str) -> String {

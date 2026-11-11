@@ -1,7 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
 
 use clap::Args;
 use serde::Deserialize;
@@ -13,28 +11,17 @@ use crate::error::AgentError;
 use crate::infisical::Secret;
 use crate::options::{Identifier, Version};
 use crate::secrets::{SecretSettings, SecretSpec};
-use crate::{archive, json, local, pi_auth, pi_scripts, remote, vault};
+use crate::{json, local, pi_auth, pi_scripts, remote, vault};
 
 const NAME: &str = "pi";
 
 const DIRECTORY: &str = ".pi/agent";
 
-/// Pi's secret-output extension imports the policy it shares with Claude's
-/// hook from `~/.config/agent-security`, and its provider keys resolve
-/// through the vault binding in `~/.config/agent-secrets`, so a VM needs
-/// both directories too.
-const SHARED_PARENT: &str = ".config";
-
-const SHARED: &[&str] = &["agent-security", "agent-secrets"];
-
+/// Names the vault project, environment, paths and identities that
+/// `bin/provider-key.py` and `bin/pi-token-pull` read, never a value.
 const BINDING: &str = ".config/agent-secrets/core-vault.json";
 
-/// The same program keeps this machine's and the VM's Codex token current.
-const PULL_SCRIPT: &str = ".local/bin/pi-token-pull";
-
 const DEFAULT_SECRETS: &[&str] = &["GITHUB_TOKEN"];
-
-const VERSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 const ADAPTER_SETTINGS: &str = "mcp-adapter.json";
 
@@ -44,44 +31,12 @@ const AUTH_FILE: &str = "auth.json";
 /// encrypted file instead, under a key that stays on the VM.
 const OAUTH_STORE_SETTING: (&str, &str) = ("oauthCredentialStore", "encrypted-file");
 
-/// What Pi reads from its agent directory, as opposed to what it writes
-/// there: sessions, caches, trust decisions and installed dependencies stay.
-/// The auth file is written apart, without this machine's OAuth sign-ins.
-const MIRRORED: &[&str] = &[
-    "AGENTS.md",
-    "ARCHITECTURE.md",
-    "agents",
-    "bin",
-    "context-budget.json",
-    "extensions",
-    "frontend-check.json",
-    "keybindings.json",
-    "lazy-load.json",
-    "mcp-adapter.json",
-    "mcp.json",
-    "models.json",
-    "npm",
-    "oxfmt.config.ts",
-    "oxlint.config.ts",
-    "package.json",
-    "packages",
-    "plans",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    "prompts",
-    "settings.json",
-    "skills",
-    "skills.json",
-    "themes",
-    "tsconfig.json",
-];
-
 #[derive(Args, Clone, Default, Deserialize)]
 #[command(next_help_heading = "Pi profile")]
 #[serde(deny_unknown_fields)]
 pub struct PiOptions {
-    /// Pi version to install on the VM [default: the version installed on
-    /// this machine]
+    /// Pi version to install on the VM [default: the version the agent
+    /// repository pins]
     #[arg(long = "pi-version", value_name = "VERSION")]
     version: Option<Version>,
 
@@ -117,12 +72,9 @@ pub struct Pi {
 }
 
 struct Prepared {
-    version: Version,
-    archive: Vec<u8>,
-    shared: Vec<u8>,
+    binding: Vec<u8>,
     adapter_settings: Vec<u8>,
     auth: Vec<u8>,
-    pull_script: Vec<u8>,
     secrets: Vec<Secret>,
 }
 
@@ -141,28 +93,16 @@ impl Pi {
     }
 
     fn gather(&self) -> Result<Prepared, AgentError> {
-        let version = match &self.version {
-            Some(version) => version.clone(),
-            None => local_version()?,
-        };
         let mut secrets = self.secrets.fetch(NAME)?;
         let home = local::home()?;
         let directory = home.join(DIRECTORY);
-        let shared_parent = home.join(SHARED_PARENT);
-        for entry in SHARED {
-            let shared = shared_parent.join(entry);
-            if !shared.is_dir() {
-                return Err(AgentError::MissingShared(shared));
-            }
-        }
-        secrets.extend(vault::mint(&home.join(BINDING))?);
+        let binding_path = home.join(BINDING);
+        let binding = read(&binding_path)?;
+        secrets.extend(vault::mint(&binding_path)?);
         Ok(Prepared {
-            version,
-            archive: archive::pack(&directory, MIRRORED)?,
-            shared: archive::pack(&shared_parent, SHARED)?,
+            binding,
             adapter_settings: adapter_settings(&directory.join(ADAPTER_SETTINGS))?,
             auth: pi_auth::auth_file(&directory.join(AUTH_FILE))?,
-            pull_script: pull_script(&home.join(PULL_SCRIPT))?,
             secrets,
         })
     }
@@ -174,25 +114,25 @@ impl Profile for Pi {
     }
 
     /// Everything local is gathered first, so a missing secret or file fails
-    /// before the VM changes.
+    /// before the VM changes. The checkout comes before the install, since
+    /// the repository pins the Pi version.
     fn provision(&self, shell: &dyn Shell) -> Result<(), Cause> {
         let prepared = self.gather()?;
         remote::hook(shell)?;
-        shell.run(&pi_scripts::install(&prepared.version), &[])?;
+        shell.run(pi_scripts::CHECKOUT, &[])?;
+        shell.run(&pi_scripts::install(self.version.as_ref()), &[])?;
         shell.run(pi_scripts::INFISICAL_INSTALL, &[])?;
-        remote::extract(shell, DIRECTORY, &prepared.archive)?;
-        remote::extract(shell, SHARED_PARENT, &prepared.shared)?;
-        remote::write_file(
+        remote::write_file(shell, BINDING, &prepared.binding)?;
+        remote::write_secret_file(
             shell,
             &format!("{DIRECTORY}/{ADAPTER_SETTINGS}"),
             &prepared.adapter_settings,
         )?;
         remote::write_secret_file(shell, &format!("{DIRECTORY}/{AUTH_FILE}"), &prepared.auth)?;
         shell.run(pi_scripts::FORGET_SIGN_INS, &[])?;
-        shell.run(pi_scripts::DEPENDENCIES, &[])?;
+        shell.run(pi_scripts::SETUP, &[])?;
         shell.run(pi_scripts::OAUTH_KEY, &[])?;
         remote::export_secrets(shell, &prepared.secrets)?;
-        remote::write_program(shell, PULL_SCRIPT, &prepared.pull_script)?;
         shell.run(pi_scripts::CODEX_PULL, &[])?;
         Ok(())
     }
@@ -210,17 +150,9 @@ fn adapter_settings(path: &Path) -> Result<Vec<u8>, AgentError> {
     })
 }
 
-fn pull_script(path: &Path) -> Result<Vec<u8>, AgentError> {
-    fs::read(path).map_err(|_| AgentError::MissingPullScript(path.to_owned()))
-}
-
-fn local_version() -> Result<Version, AgentError> {
-    let mut command = Command::new(NAME);
-    command.arg("--version");
-    let stdout = local::run(NAME, command, VERSION_TIMEOUT).map_err(|error| match error {
-        AgentError::Spawn { .. } => AgentError::NoLocalPi,
-        error => error,
-    })?;
-    let text = String::from_utf8_lossy(&stdout).trim().to_owned();
-    text.parse().map_err(|_| AgentError::LocalVersion(text))
+fn read(path: &Path) -> Result<Vec<u8>, AgentError> {
+    fs::read(path).map_err(|source| AgentError::Read {
+        path: path.to_owned(),
+        source,
+    })
 }

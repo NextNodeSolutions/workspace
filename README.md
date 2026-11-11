@@ -10,7 +10,7 @@ ln -s "$PWD/target/release/workspace" "$HOME/.local/bin/workspace"
 
 workspace setup                       # once, to prepare the provider account
 workspace start                       # a disposable VM: a shell on it, deleted when you leave
-workspace start --profile pi          # the same, with this machine's Pi installed on it
+workspace start --profile pi          # the same, with Pi and the shared agent directory on it
 workspace start -d                    # prints its id instead; it lives until removed or its lifetime ends
 workspace start dev                   # a kept VM named dev: created now, resumed by later starts
 workspace start dev -- pi             # runs pi on it; the VM stops when pi exits or the session goes quiet

@@ -1,6 +1,6 @@
 # Pi
 
-The `pi` profile turns a VM into this machine's Pi: the same version, the same agent directory, the same model and MCP configuration, with the dependencies installed. It is safe to run again, and each run brings the VM up to date with this machine.
+The `pi` profile turns a VM into a Pi workstation: the agent directory comes from the public [`NextNodeSolutions/pi-agent`](https://github.com/NextNodeSolutions/pi-agent) repository, Pi is the version that repository pins, and this machine contributes only what belongs to it: the vault binding, the MCP adapter's settings, API keys, and a vault credential minted for the VM. It is safe to run again, and each run brings the VM's checkout up to date with the repository.
 
 ## What it does
 
@@ -11,48 +11,47 @@ sequenceDiagram
     participant M as this machine
     participant V as the vault (Infisical)
     participant S as Shell on the VM
-    P->>M: pi --version, unless --pi-version was given
+    participant G as GitHub
     P->>M: infisical export, when the profile exports secrets
-    P->>M: tar of the agent directory, without its state
-    P->>M: tar of ~/.config/agent-security and ~/.config/agent-secrets, which Pi reads outside its directory
-    P->>M: read ~/.local/bin/pi-token-pull, the program that keeps the Codex token current
+    P->>M: read the vault binding, mcp-adapter.json and auth.json
     P->>V: mint a client secret of the boats identity for this VM, with this machine's session
     Note over P,V: everything local is gathered first, so a missing file or secret fails before the VM changes
     P->>S: hook: PATH and secrets file sourced from .bashrc
-    P->>S: npm install -g pi at that version, unless it already is
+    S->>G: clone pi-agent into ~/.pi/agent, or fast-forward the checkout
+    P->>S: npm install -g pi at the pinned version, unless it already is
     P->>S: npm install -g the Infisical CLI, unless one is there
-    P->>S: extract the archive into ~/.pi/agent, on stdin
-    P->>S: extract the two shared directories into ~/.config, on stdin
+    P->>S: write the vault binding, on stdin
     P->>S: write mcp-adapter.json with the encrypted sign-in store, on stdin
     P->>S: write auth.json without this machine's OAuth sign-ins, on stdin
-    P->>S: pnpm install where a lockfile is
+    P->>S: node bin/setup.ts: shared settings and locked dependencies
     P->>S: make a key for that store, once
     P->>S: write the secrets file, with the VM's vault credentials, on stdin
-    P->>S: write ~/.local/bin/pi-token-pull, on stdin
     P->>S: install the hourly pull in the crontab, then pull the Codex token now
     S->>V: read the Codex access token, now and every hour
 ```
 
 Each step is one script over the provider's shell. A script fails on its first error, and the error says what failed on the VM.
 
-## What the VM gets
+## The agent directory
 
-The archive holds what Pi reads from `~/.pi/agent`, and leaves what Pi writes there, such as sessions, caches, trust decisions and installed dependencies:
+The VM reads the agent directory from the repository, never from this machine, so a VM works the same whichever machine started it, and a change reaches VMs by being pushed, not by being copied.
 
-| Mirrored | Kept local |
+- **No checkout yet.** The repository is cloned into `~/.pi/agent`. A directory already there without Git, such as one Pi made at its first start, is adopted in place: the files the repository tracks replace those on the VM, leftovers in the folders it tracks are removed, and what the repository ignores stays, such as sessions, sign-ins and installed dependencies.
+- **A checkout.** It only fast-forwards. Work done on the VM is never overwritten: when it blocks the update, the step fails and says to commit, stash or drop it on the VM.
+
+`bin/setup.ts` in the checkout then merges the repository's pinned settings into the VM's `settings.json`, creates it from the repository's defaults when missing, and installs the locked dependencies. Pi installs its own `npm:` packages at its first start.
+
+A client overlay under `client/` stays on the machine that holds it: the repository is public, and client material never leaves its machine, so a VM runs without it.
+
+## What this machine sends
+
+| File | Why it comes from this machine |
 | --- | --- |
-| `AGENTS.md`, `ARCHITECTURE.md`, `agents`, `prompts`, `skills`, `skills.json`, `themes`, `keybindings.json` | `sessions`, `trust.json`, `crashes.json`, `run-history.jsonl` |
-| `extensions`, `packages`, `bin`, `npm`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.json`, `oxfmt.config.ts`, `oxlint.config.ts` | every `node_modules`, which `pnpm install` recreates on the VM |
-| `settings.json`, `models.json`, `mcp.json`, `mcp-adapter.json`, `lazy-load.json`, `context-budget.json`, `frontend-check.json`, `plans` | `mcp-cache.json`, `mcp-npx-cache.json`, `models-store.json`, `mcp-auth.json` |
+| `~/.config/agent-secrets/core-vault.json` | The vault binding that `bin/provider-key.py` and `bin/pi-token-pull` read. It names the project, the environment, the paths and the identities, never a value. |
+| `~/.pi/agent/mcp-adapter.json` | Untracked, since it may hold API keys. It lands mode 0600, with the encrypted sign-in store set. |
+| `~/.pi/agent/auth.json` | Pi's API keys, mode 0600, never this machine's OAuth sign-ins. |
 
-Symbolic links are followed, so the VM gets files where this machine has links. A listed entry that this machine lacks is skipped.
-
-Two directories outside `~/.pi/agent` travel as well, and both are required rather than skipped, since a machine without them fails before the VM changes:
-
-- `~/.config/agent-security`: the `secret-output` extension imports the policy it shares with Claude's hook from there, so Pi cannot start without it.
-- `~/.config/agent-secrets`: the vault binding that `bin/provider-key.py` and `pi-token-pull` read. It names the project, the environment, the paths and the identities, never a value.
-
-`models.json` and `mcp-adapter.json` hold API keys, so they travel on stdin, inside the archive, and land with the modes they have here. `auth.json` is written apart, mode 0600: the VM gets this machine's API keys, never its OAuth sign-ins. The next two sections say how the VM reads the vault, and how it signs in anyway.
+The next two sections say how the VM reads the vault, and how it signs in anyway.
 
 ## The VM's own vault access
 
@@ -66,11 +65,9 @@ So a VM never holds a credential that outlives it by much, this machine's own id
 
 An API key can be copied to as many VMs as you like. An OAuth session cannot: its refresh token is exclusive. Whoever refreshes gets a new one and the old one dies, so a second holder that refreshes ends the session of the first. Only the machine that signed in therefore keeps the refresh token, and only it refreshes, through Pi itself. A VM gets the access token, which any number of holders may use at once until it expires, and an empty refresh token in its place, so that it never tries.
 
-The access token reaches the VM from the vault, not from this machine. The machine that signed in publishes it there every hour, under the secret the binding names as `clients.pi.oauth.codex`. The profile copies this machine's `~/.local/bin/pi-token-pull` to the same path on the VM, puts an hourly line in the VM's crontab that sources the secrets file and runs it, and runs it once at the end, so the VM starts with a token. The program reads the token with the VM's own identity, and writes the `openai-codex` entry of `~/.pi/agent/auth.json`, which Pi rereads without a restart. Its log is `~/.local/state/pi-token-pull.log` on the VM. A VM without `cron` fails at that step, and says so.
+The access token reaches the VM from the vault, not from this machine. The machine that signed in publishes it there every hour, under the secret the binding names as `clients.pi.oauth.codex`. The VM runs `bin/pi-token-pull` from its checkout, the program the publishing machine runs too: the profile puts an hourly line in the VM's crontab that sources the secrets file and runs it, and runs it once at the end, so the VM starts with a token. The program reads the token with the VM's own identity, and writes the `openai-codex` entry of `~/.pi/agent/auth.json`, which Pi rereads without a restart. Its log is `~/.local/state/pi-token-pull.log` on the VM. A VM without `cron` fails at that step, and says so.
 
 The VM has no keychain, and without one Pi's MCP adapter refuses to remember anything and reports every OAuth server as an error at each start. The profile therefore sets `oauthCredentialStore` to `encrypted-file` in the VM's `mcp-adapter.json`, and makes a key for it once, kept in the secrets file as `PI_MCP_ADAPTER_OAUTH_FILE_KEY`. An MCP server that needs a sign-in gets one on the VM, with `/mcp-auth <server>` in Pi, which shows a link to open here and asks for the callback URL back; until then Pi notes once that the server needs a sign-in, and stays quiet about it in later sessions. A server whose access tokens live about an hour is a poor fit for that; a static token in its `headers` serves it better.
-
-A `packages` entry of `settings.json` that points outside the agent directory does not exist on the VM, and Pi warns about it at start.
 
 ## Secrets
 
@@ -78,7 +75,7 @@ The profile exports secrets as environment variables in every shell on the VM, f
 
 | Flag | Config key | What it sets |
 | --- | --- | --- |
-| `--pi-version` | `version` | The Pi version to install. It defaults to the version this machine runs, so the extensions written against it work. |
+| `--pi-version` | `version` | The Pi version to install. It defaults to the exact version the repository's `package.json` pins, since the extensions were written against it. |
 | `--pi-infisical-project` | `infisical_project` | The Infisical project the secrets come from. Required when a secret comes from Infisical. |
 | `--pi-infisical-env` | `infisical_env` | The Infisical environment, `dev` by default. |
 | `--pi-secrets` | `secrets` | The secrets to export, `GITHUB_TOKEN` by default. `secrets = []` in the config file exports none, and then Infisical's export is never called. |
