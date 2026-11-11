@@ -11,7 +11,7 @@ use crate::error::AgentError;
 use crate::infisical::Secret;
 use crate::options::{Identifier, Version};
 use crate::secrets::{SecretSettings, SecretSpec};
-use crate::{json, local, pi_auth, pi_scripts, remote, vault};
+use crate::{json, local, pi_auth, pi_scripts, remote, tailnet, vault};
 
 const NAME: &str = "pi";
 
@@ -65,6 +65,12 @@ pub struct PiOptions {
         value_delimiter = ','
     )]
     secrets: Option<Vec<SecretSpec>>,
+
+    /// Join the VM to this machine's tailnet, so that the links its agent
+    /// gives open on your devices
+    #[arg(id = "pi_tailnet", long = "pi-tailnet")]
+    #[serde(default, rename = "tailnet")]
+    joins_tailnet: bool,
 }
 
 impl PiOptions {
@@ -75,6 +81,7 @@ impl PiOptions {
             infisical_project: self.infisical_project.or(fallback.infisical_project),
             infisical_env: self.infisical_env.or(fallback.infisical_env),
             secrets: self.secrets.or(fallback.secrets),
+            joins_tailnet: self.joins_tailnet || fallback.joins_tailnet,
         }
     }
 }
@@ -82,6 +89,7 @@ impl PiOptions {
 pub struct Pi {
     version: Option<Version>,
     secrets: SecretSettings,
+    joins_tailnet: bool,
 }
 
 struct Prepared {
@@ -89,6 +97,7 @@ struct Prepared {
     adapter_settings: Vec<u8>,
     auth: Vec<u8>,
     secrets: Vec<Secret>,
+    join_key: Option<Vec<u8>>,
 }
 
 impl Pi {
@@ -102,6 +111,7 @@ impl Pi {
                 options.secrets,
                 DEFAULT_SECRETS,
             ),
+            joins_tailnet: options.joins_tailnet,
         }
     }
 
@@ -117,6 +127,7 @@ impl Pi {
             adapter_settings: adapter_settings(&directory.join(ADAPTER_SETTINGS))?,
             auth: pi_auth::auth_file(&directory.join(AUTH_FILE))?,
             secrets,
+            join_key: self.joins_tailnet.then(tailnet::join_key).transpose()?,
         })
     }
 }
@@ -147,6 +158,9 @@ impl Profile for Pi {
         shell.run(pi_scripts::OAUTH_KEY, &[])?;
         remote::export_secrets(shell, &prepared.secrets)?;
         shell.run(pi_scripts::CODEX_PULL, &[])?;
+        if let Some(join_key) = &prepared.join_key {
+            shell.run(pi_scripts::TAILNET, join_key)?;
+        }
         Ok(())
     }
 }

@@ -10,6 +10,7 @@ mod pi_auth;
 mod pi_scripts;
 mod remote;
 mod secrets;
+mod tailnet;
 mod vault;
 
 pub use claude::{Claude, ClaudeOptions};
