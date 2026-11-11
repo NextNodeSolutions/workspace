@@ -60,9 +60,17 @@ pub enum Error {
         cause: Cause,
     },
 
-    #[error("could not open a shell on {vm}; it is left as it was")]
+    #[error("could not open a session on {vm}; it is left as it was")]
     Attach {
         vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
+    #[error("could not save {vm} as `{name}`; the VM is left as it was")]
+    Snapshot {
+        vm: VmId,
+        name: String,
         #[source]
         cause: Cause,
     },

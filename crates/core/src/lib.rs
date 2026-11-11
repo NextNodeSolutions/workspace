@@ -1,3 +1,4 @@
+pub mod duration;
 mod error;
 mod failure;
 pub mod lifecycle;
@@ -6,4 +7,5 @@ mod vm;
 
 pub use error::{Cause, Error};
 pub use failure::{Failure, Reason};
+pub use port::SessionEnd;
 pub use vm::{VmId, VmSpec};

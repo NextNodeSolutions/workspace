@@ -1,6 +1,6 @@
 # Configuration
 
-Providers take options, such as a machine type. You set an option with a flag, in the config file, or not at all. Each provider's page says which options apply when `start` resumes a VM rather than create one.
+Providers and profiles take options, such as a machine type or a secret to export. You set an option with a flag, in the config file, or not at all. Each provider's page says which options apply when `start` resumes a VM rather than create one.
 
 ## Which value wins
 
@@ -32,7 +32,14 @@ Each provider reads its own table under `[providers]`, named after the provider:
 type = "small"
 ```
 
-Each provider's page lists its keys, and `workspace start --help` lists the matching flags.
+Each profile reads its own table under `[profiles]`, the same way:
+
+```toml
+[profiles.pi]
+infisical_project = "…"
+```
+
+Each provider's or profile's page lists its keys, and `workspace start --help` lists the matching flags.
 
 ## The default provider
 
@@ -46,6 +53,16 @@ type = "small"
 ```
 
 `workspace setup` writes that key once the provider is ready, and leaves the rest of the file as it was, comments included. With neither the flag nor the key, `setup` takes the only provider there is, and `start` asks you to run `setup`. A recorded VM always runs on the provider that created it, since its record names that provider, so `start` on a recorded name, `stop` and `remove` need neither.
+
+## Idle sessions
+
+The `idle` key at the top of the file, or `--idle` on `start`, says how long a session may pass nothing through the terminal before the VM is put away: a count and a unit, such as `5m` or `1h`, or `off`.
+
+```toml
+idle = "10m"
+```
+
+`workspace start --help` gives the default.
 
 ## Mistakes stop the command
 

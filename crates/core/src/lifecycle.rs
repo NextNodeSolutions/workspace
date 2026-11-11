@@ -1,5 +1,7 @@
-use crate::port::{Ledger, Profile, Provider, Shell};
+use crate::port::{Ledger, Profile, Provider, SessionEnd, Shell, Terminal};
 use crate::{Error, Failure, Reason, VmId, VmSpec};
+
+const DISPOSABLE: &str = "a disposable VM";
 
 /// # Errors
 ///
@@ -44,10 +46,29 @@ pub fn start(
 ///
 /// [`Error::Attach`] when no session could be opened, and [`Error::Gone`]
 /// when the provider no longer has the VM.
-pub fn attach(provider: &dyn Provider, vm: &VmId) -> Result<(), Error> {
-    provider.attach(vm).map_err(|failure| {
+pub fn attach(
+    provider: &dyn Provider,
+    vm: &VmId,
+    command: &[String],
+    terminal: &dyn Terminal,
+) -> Result<SessionEnd, Error> {
+    provider.attach(vm, command, terminal).map_err(|failure| {
         failure.into_error(Some(vm), |cause| Error::Attach {
             vm: vm.clone(),
+            cause,
+        })
+    })
+}
+
+/// # Errors
+///
+/// [`Error::Snapshot`] when nothing is saved under `name`, and
+/// [`Error::Gone`] when the provider no longer has the VM.
+pub fn snapshot(provider: &dyn Provider, vm: &VmId, name: &str) -> Result<(), Error> {
+    provider.snapshot(vm, name).map_err(|failure| {
+        failure.into_error(Some(vm), |cause| Error::Snapshot {
+            vm: vm.clone(),
+            name: name.to_owned(),
             cause,
         })
     })
@@ -88,7 +109,7 @@ pub fn remove(provider: &dyn Provider, ledger: &dyn Ledger, vm: &VmId) -> Result
 fn create(provider: &dyn Provider, ledger: &dyn Ledger, spec: &VmSpec) -> Result<VmId, Error> {
     let vm = provider.create(spec).map_err(|failure| {
         failure.into_error(None, |cause| Error::Create {
-            name: spec.name().to_owned(),
+            name: spec.name().unwrap_or(DISPOSABLE).to_owned(),
             cause,
         })
     })?;

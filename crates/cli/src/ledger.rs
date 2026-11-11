@@ -31,7 +31,7 @@ pub struct NameLock {
 pub struct Record {
     pub id: VmId,
     pub provider: String,
-    pub name: String,
+    pub name: Option<String>,
 }
 
 #[derive(Default)]
@@ -75,11 +75,11 @@ impl Ledger for FileLedger {
     fn record(&self, vm: &VmId, spec: &VmSpec) -> Result<(), Cause> {
         let path = record_path(&self.directory, vm)?;
         let staging = self.directory.join(format!("{HIDDEN_PREFIX}{vm}.tmp"));
-        let record = format!(
-            "{PROVIDER_FIELD}{}\n{NAME_FIELD}{}\n",
-            self.provider,
-            spec.name()
-        );
+        let name_line = spec
+            .name()
+            .map(|name| format!("{NAME_FIELD}{name}\n"))
+            .unwrap_or_default();
+        let record = format!("{PROVIDER_FIELD}{}\n{name_line}", self.provider);
         fs::create_dir_all(&self.directory).map_err(files::io_error("create", &self.directory))?;
         fs::write(&staging, record).map_err(files::io_error("write", &staging))?;
         fs::rename(&staging, &path).map_err(files::io_error("write", &path))?;
@@ -138,7 +138,8 @@ pub fn records() -> Result<Records, LedgerError> {
         }
     }
     records.found.sort_by(|left, right| {
-        (&left.name, left.id.as_str()).cmp(&(&right.name, right.id.as_str()))
+        let key = |record: &Record| (record.name.clone(), record.id.as_str().to_owned());
+        key(left).cmp(&key(right))
     });
     Ok(records)
 }
@@ -155,7 +156,7 @@ pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
     let Records { found, unreadable } = records()?;
     let mut matches: Vec<Record> = found
         .into_iter()
-        .filter(|record| record.name == name)
+        .filter(|record| record.name.as_deref() == Some(name))
         .collect();
     if matches.len() > 1 {
         let ids: Vec<&str> = matches.iter().map(|record| record.id.as_str()).collect();
@@ -195,16 +196,15 @@ fn read_record(directory: &Path, vm: &VmId) -> Result<Option<Record>, LedgerErro
     };
     let field = |field: &'static str| {
         let value = text.lines().find_map(|line| line.strip_prefix(field));
-        value
-            .map(str::to_owned)
-            .ok_or_else(|| LedgerError::Incomplete {
-                path: path.clone(),
-                field,
-            })
+        value.map(str::to_owned)
     };
+    let provider = field(PROVIDER_FIELD).ok_or_else(|| LedgerError::Incomplete {
+        path: path.clone(),
+        field: PROVIDER_FIELD,
+    })?;
     Ok(Some(Record {
         id: vm.clone(),
-        provider: field(PROVIDER_FIELD)?,
-        name: field(NAME_FIELD)?,
+        provider,
+        name: field(NAME_FIELD),
     }))
 }

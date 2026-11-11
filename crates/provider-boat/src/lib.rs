@@ -10,11 +10,11 @@ mod shell;
 use std::time::Duration;
 
 use serde::de::IgnoredAny;
-use workspace_core::port::{Provider, Shell};
+use workspace_core::port::{Provider, SessionEnd, Shell, Terminal};
 use workspace_core::{Failure, VmId, VmSpec};
 
 use error::BoatError;
-use options::Settings;
+use options::{BoatName, Settings};
 use sandbox::State;
 use shell::BoatShell;
 
@@ -24,6 +24,12 @@ const START_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Covers the disk snapshot Boat takes before it stops a sandbox.
 const STOP_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Saving a snapshot uploads the whole disk, which can take minutes.
+const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// A disposable sandbox keeps no snapshot, so a stop erases it and nothing is left behind.
+const NO_SNAPSHOTS: &str = "--no-snapshots";
 
 pub struct Boat {
     settings: Settings,
@@ -57,10 +63,16 @@ impl Provider for Boat {
     }
 
     /// Boat names sandboxes itself, so a VM's name lives only in its record.
-    fn create(&self, _spec: &VmSpec) -> Result<VmId, Failure> {
+    fn create(&self, spec: &VmSpec) -> Result<VmId, Failure> {
         let flags = self.start_flags()?;
         let mut args = vec!["--type", self.settings.machine_type.as_str()];
         args.extend(flags.iter().map(String::as_str));
+        if let Some(from) = &self.settings.from {
+            args.extend(["--from", from.as_str()]);
+        }
+        if spec.is_disposable() {
+            args.push(NO_SNAPSHOTS);
+        }
         let id = sandbox::create(&args)?;
         Ok(VmId::from(id))
     }
@@ -89,8 +101,13 @@ impl Provider for Boat {
         Ok(Box::new(BoatShell::new(vm.clone())))
     }
 
-    fn attach(&self, vm: &VmId) -> Result<(), Failure> {
-        Ok(shell::attach(vm)?)
+    fn attach(
+        &self,
+        vm: &VmId,
+        command: &[String],
+        terminal: &dyn Terminal,
+    ) -> Result<SessionEnd, Failure> {
+        Ok(shell::attach(vm, command, terminal)?)
     }
 
     fn stop(&self, vm: &VmId) -> Result<(), Failure> {
@@ -104,6 +121,12 @@ impl Provider for Boat {
             (_, Err(refusal)) => Err(refusal.into()),
             (state, Ok(_)) => Err(BoatError::NotStopped { state }.into()),
         }
+    }
+
+    fn snapshot(&self, vm: &VmId, name: &str) -> Result<(), Failure> {
+        let name: BoatName = name.parse().map_err(BoatError::from)?;
+        cli::run_within("snapshot", &[vm.as_str(), name.as_str()], SNAPSHOT_TIMEOUT)?;
+        Ok(())
     }
 
     fn remove(&self, vm: &VmId) -> Result<(), Failure> {

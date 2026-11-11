@@ -1,4 +1,16 @@
+use std::process::Command;
+
 use crate::{Cause, Failure, VmId, VmSpec};
+
+/// How a session on a VM ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionEnd {
+    /// The program ended: the person left the shell, or the command ran to its end.
+    Left { success: bool },
+    /// Nothing passed through the terminal for the idle duration, so the
+    /// session was ended.
+    Idle,
+}
 
 pub trait Provider {
     /// # Errors
@@ -23,11 +35,19 @@ pub trait Provider {
     /// When the VM is not running or does not become reachable.
     fn shell(&self, vm: &VmId) -> Result<Box<dyn Shell + '_>, Failure>;
 
+    /// Opens a session on the VM through `terminal`: a shell when `command`
+    /// is empty, else that command.
+    ///
     /// # Errors
     ///
     /// When no session could be opened, for example because the VM stopped.
     /// The VM is left as it was.
-    fn attach(&self, vm: &VmId) -> Result<(), Failure>;
+    fn attach(
+        &self,
+        vm: &VmId,
+        command: &[String],
+        terminal: &dyn Terminal,
+    ) -> Result<SessionEnd, Failure>;
 
     /// # Errors
     ///
@@ -36,8 +56,22 @@ pub trait Provider {
 
     /// # Errors
     ///
+    /// When nothing is saved under `name`. The VM is left as it was.
+    fn snapshot(&self, vm: &VmId, name: &str) -> Result<(), Failure>;
+
+    /// # Errors
+    ///
     /// When the VM may still exist.
     fn remove(&self, vm: &VmId) -> Result<(), Failure>;
+}
+
+/// This machine's terminal, which runs the program a provider gives to open
+/// a session, and watches it for idleness.
+pub trait Terminal {
+    /// # Errors
+    ///
+    /// When the program could not run on this terminal.
+    fn run(&self, program: Command) -> Result<SessionEnd, Cause>;
 }
 
 pub trait Shell {
