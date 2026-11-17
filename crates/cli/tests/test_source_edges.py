@@ -25,6 +25,10 @@ class SourceEdges(SourceFixture):
         self.assertEqual(files["line\n-tab\t-$name.txt"], b"$Format:%H$\n")
         self.assert_provenance(result, b"nested area")
 
+    def test_scope_must_be_a_committed_directory(self):
+        result = self.job(scope=self.source / "tracked.txt")
+        self.assert_refused(result)
+
     def test_non_utf8_and_long_names_survive_with_exact_manifest(self):
         self.write(os.fsdecode(b"name-\xff"), b"BINARY NAME\n")
         self.write("long/" + "n" * 200, b"LONG NAME\n")

@@ -32,6 +32,9 @@ impl Source {
             MAX_FILE_LIST_BYTES,
         )?;
         source.commit = String::from_utf8(line(commit)?).map_err(|_| PushError::InvalidObject)?;
+        if source.scope_type()? != b"tree" {
+            return Err(PushError::NotWorkTree.into());
+        }
         Ok(source)
     }
 
@@ -44,13 +47,27 @@ impl Source {
     }
 
     pub(super) fn listing(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut command = self.git();
+        command.args(["ls-tree", "-r", "-t", "-z", "--full-tree"]);
+        command.arg(self.selector());
+        Ok(capture("git", command, Vec::new(), MAX_FILE_LIST_BYTES)?)
+    }
+
+    fn scope_type(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        if self.scope.is_empty() {
+            return Ok(b"tree".to_vec());
+        }
+        let mut command = self.git();
+        command.arg("cat-file").arg("-t").arg(self.selector());
+        let kind = capture("git", command, Vec::new(), MAX_FILE_LIST_BYTES)?;
+        line(kind).map_err(Into::into)
+    }
+
+    fn selector(&self) -> OsString {
         let mut selector = self.commit.as_bytes().to_vec();
         selector.push(b':');
         selector.extend_from_slice(&self.scope);
-        let mut command = self.git();
-        command.args(["ls-tree", "-r", "-t", "-z", "--full-tree"]);
-        command.arg(OsString::from_vec(selector));
-        Ok(capture("git", command, Vec::new(), MAX_FILE_LIST_BYTES)?)
+        OsString::from_vec(selector)
     }
 
     pub(super) fn run(
