@@ -122,6 +122,12 @@ A recorded name never gets a second VM: `start` resumes the one it has, on the p
 
 Without `-d`, `start` ends by opening a session on the VM: a shell, or the command given after `--`. The session runs in a pseudo-terminal that the cli owns, so the cli sees every byte that passes, your keystrokes one way and the VM's output the other, and each one counts as activity. When nothing passes for the idle duration, the cli ends the session and puts the VM away: a named VM is stopped and keeps its disk, a disposable one is deleted. Typing is activity, so a prompt being written never trips it. A command given after `--` puts the VM away the same way when it ends, since that command was what the VM was for. Leaving a plain shell leaves a named VM running, since an agent may still work on it, and `start` reminds you that it does. Without a terminal, such as in a script, `start` fails before it creates anything unless `-d` asks for the id instead.
 
+### `job`
+
+An unattended job uses the same `start` lifecycle to create or resume, record, wait and apply profiles. The CLI holds the name lock through the entire job and cleanup, so jobs with one name run sequentially. Optional repository upload is prepared and bounded locally before any VM starts; upload and setup finish before runtime values are sent over stdin to the command. The core's `execute` operation opens a provider shell on the recorded VM and returns its output without interpreting it; failure to execute the script is reported separately from failure to reach the shell. The CLI owns framing, payload validation, log masking and local result storage, as described in [Unattended jobs](jobs.md).
+
+A setup, infrastructure or collection failure preserves the VM and its record. A successfully collected command status, including nonzero, is a completed outcome: the CLI stops a named VM or removes a disposable one unless asked to keep it. Only after cleanup succeeds does the CLI return the command status as its own exit code. Cleanup failure is reported with the VM and the exact retry command.
+
 ### `snapshot`
 
 ```mermaid

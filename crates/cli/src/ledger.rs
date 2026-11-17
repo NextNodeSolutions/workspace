@@ -9,7 +9,6 @@ use crate::files::{self, FileError};
 use crate::xdg;
 
 const RECORDS_DIRECTORY: &str = "workspace/vms";
-const DEFAULT_DATA_HOME: &str = ".local/share";
 const PROVIDER_FIELD: &str = "provider=";
 const NAME_FIELD: &str = "name=";
 const LOCK_SUFFIX: &str = ".lock";
@@ -174,7 +173,7 @@ pub fn named(name: &str) -> Result<Option<Record>, LedgerError> {
 }
 
 fn records_directory() -> Result<PathBuf, LedgerError> {
-    let data_home = xdg::base_directory("XDG_DATA_HOME", DEFAULT_DATA_HOME)
+    let data_home = xdg::base_directory("XDG_DATA_HOME", xdg::DEFAULT_DATA_HOME)
         .ok_or(LedgerError::NoDataDirectory)?;
     Ok(data_home.join(RECORDS_DIRECTORY))
 }

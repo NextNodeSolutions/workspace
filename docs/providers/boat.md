@@ -22,6 +22,10 @@ A disposable VM is created with `--no-snapshots`: Boat keeps no disk for it, so 
 
 The TTL is a ceiling, not an idle timer. Boat stops the sandbox when it runs out, even mid-work, because its timer cannot tell whether an agent is still busy. Stopping a sandbox once its agent goes idle is the job of the profile that runs the agent.
 
+## Unrecorded VMs
+
+If workspace cannot write a VM record after Boat returns an id, the VM can still be running and billed. Workspace reports its id and provider, but its stop and remove commands need a record to resolve. Run `boat --no-update stop ID` to stop it immediately. When discarding its data, run `boat --no-update delete ID --yes`.
+
 ## What a sandbox gets from your account
 
 A Boat environment decides what a sandbox receives from your account. Boat's default environment can pass your GitHub access, agent logins and secrets. `workspace` uses an environment of its own, so that a sandbox gets one thing only:

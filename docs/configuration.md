@@ -39,7 +39,7 @@ Each profile reads its own table under `[profiles]`, the same way:
 infisical_project = "…"
 ```
 
-Each provider's or profile's page lists its keys, and `workspace start --help` lists the matching flags.
+Each provider's or profile's page lists its keys, and `workspace start --help` and `workspace job --help` list the matching flags. Jobs use the same provider and profile precedence as starts.
 
 ## The default provider
 

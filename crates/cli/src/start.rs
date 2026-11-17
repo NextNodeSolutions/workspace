@@ -10,6 +10,9 @@ use crate::config::{Config, Profiles};
 use crate::ledger::{self, FileLedger, Record};
 use crate::terminal::{Idle, LocalTerminal};
 
+pub(crate) const NAME_WAIT_MESSAGE: &str =
+    "Another `workspace start` or `job` of that name is running: waiting for it.";
+
 #[derive(Debug, thiserror::Error)]
 #[error("no terminal to open a session in: pass -d to start the VM without one")]
 struct NoTerminal;
@@ -68,8 +71,7 @@ pub fn run(
         Some(name) => VmSpec::named(name)?,
         None => VmSpec::disposable(),
     };
-    let on_wait =
-        || eprintln!("Another `workspace start` of that name is running: waiting for it.");
+    let on_wait = || eprintln!("{NAME_WAIT_MESSAGE}");
     let lock = spec
         .name()
         .map(|name| ledger::lock_name(name, on_wait))
@@ -160,7 +162,7 @@ fn leave(
     Ok(())
 }
 
-fn next_step(error: CoreError, provider: &str, spec: &VmSpec) -> Box<dyn Error> {
+pub(crate) fn next_step(error: CoreError, provider: &str, spec: &VmSpec) -> Box<dyn Error> {
     match error {
         CoreError::Setup { cause } => NeedsSetup {
             provider: provider.to_owned(),
@@ -177,7 +179,7 @@ fn next_step(error: CoreError, provider: &str, spec: &VmSpec) -> Box<dyn Error> 
     }
 }
 
-fn pick_provider(
+pub(crate) fn pick_provider(
     spec: &VmSpec,
     recorded: Option<Record>,
     asked: Option<String>,

@@ -42,6 +42,33 @@ pub fn start(
     Ok(vm)
 }
 
+/// Runs a script on an already recorded VM; stdin carries its runtime input.
+///
+/// # Errors
+///
+/// [`Error::Setup`] when the account must be set up again first,
+/// [`Error::Gone`] when the provider no longer has the VM, or
+/// [`Error::Shell`] when the shell cannot open, or [`Error::Execute`] when
+/// the script fails. The VM and its record
+/// are left as they were, and the error names the VM.
+pub fn execute(
+    provider: &dyn Provider,
+    vm: &VmId,
+    script: &str,
+    stdin: &[u8],
+) -> Result<String, Error> {
+    let shell = provider.shell(vm).map_err(|failure| {
+        failure.into_error(Some(vm), |cause| Error::Shell {
+            vm: vm.clone(),
+            cause,
+        })
+    })?;
+    shell.run(script, stdin).map_err(|cause| Error::Execute {
+        vm: vm.clone(),
+        cause,
+    })
+}
+
 /// # Errors
 ///
 /// [`Error::Attach`] when no session could be opened, and [`Error::Gone`]
