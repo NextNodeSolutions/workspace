@@ -25,9 +25,9 @@ use script::{MAX_LOG_BYTES, MAX_PAYLOAD_BYTES};
 pub(crate) struct Job {
     /// Name to create or resume; without one the VM is disposable
     name: Option<String>,
-    /// Upload tracked and unignored files from a local git work tree before setup
+    /// Upload the committed HEAD tree scoped to DIR before setup
     #[arg(long, value_name = "DIR", long_help = format!(
-        "Upload tracked and unignored files from a local git work tree before setup. Both the tar and its gzip upload must fit within {} bytes; preparation finishes before creating or resuming a VM.", push::MAX_PUSH_BYTES
+        "Upload one pinned HEAD tree scoped to DIR before setup. Local edits, staged additions and untracked files are excluded. Archive attributes are ignored. Unsafe symlinks and submodules are refused. The remote workdir must not exist or have symlink parents. Both the tar and its gzip upload must fit within {} bytes; preparation finishes before creating or resuming a VM. Private source.json records the commit, scope, members and uploaded SHA-256 digest.", push::MAX_PUSH_BYTES
     ))]
     push: Option<PathBuf>,
     /// Local shell script to run before injecting the runtime environment
@@ -108,6 +108,9 @@ fn run_masked(job: &Job, file: Config, environment: &Environment) -> Result<u8, 
     let setup = prepare_script(job, environment)?;
     let upload = push::archive(job.push.as_deref(), environment)?;
     let directory = output::directory()?;
+    if let Some(upload) = &upload {
+        upload.save(&directory)?;
+    }
     let running = vm::start(job, file)?;
     let vm = running.vm.clone();
     eprintln!(
@@ -123,7 +126,7 @@ fn run_masked(job: &Job, file: Config, environment: &Environment) -> Result<u8, 
         &vm,
         job,
         &setup,
-        upload.as_deref(),
+        upload.as_ref().map(|upload| upload.bytes.as_slice()),
         environment,
         &directory,
     );

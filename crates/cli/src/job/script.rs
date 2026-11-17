@@ -25,7 +25,18 @@ fn workdir(job: &Job) -> String {
 
 pub(super) fn upload(job: &Job) -> String {
     format!(
-        "set -eu\nworkdir={}\nmkdir -p -- \"$workdir\"\ntar --warning=no-unknown-keyword -xzf - -C \"$workdir\"",
+        r#"set -eu
+unset CDPATH
+workdir={}
+case "$workdir" in /*) ;; *) workdir=$PWD/$workdir ;; esac
+parent=${{workdir%/*}}
+name=${{workdir##*/}}
+refuse_upload() {{ printf '%s\n' 'upload requires a new workdir with an existing parent and no symlink parents' >&2; exit 1; }}
+cd -L -- "$parent" 2>/dev/null || refuse_upload
+[ "$PWD" = "$(pwd -P)" ] || refuse_upload
+mkdir -- "$name" 2>/dev/null || refuse_upload
+cd -P -- "$name"
+tar --warning=no-unknown-keyword -xzf - -C . 2>/dev/null || {{ printf '%s\n' 'could not extract committed job source' >&2; exit 1; }}"#,
         workdir(job)
     )
 }

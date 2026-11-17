@@ -201,7 +201,7 @@ fn decode(line: Option<&str>, limit: usize) -> Result<Vec<u8>, OutputError> {
     Ok(bytes)
 }
 
-fn write(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
+pub(super) fn write(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
     OpenOptions::new()
         .write(true)
         .create_new(true)
