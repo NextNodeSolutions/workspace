@@ -45,6 +45,13 @@ pub enum Error {
         cause: Cause,
     },
 
+    #[error("could not execute a script on {vm}; the VM and its record are kept")]
+    Execute {
+        vm: VmId,
+        #[source]
+        cause: Cause,
+    },
+
     #[error("profile `{profile}` failed on {vm}; it is still running")]
     Provision {
         profile: &'static str,

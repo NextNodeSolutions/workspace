@@ -9,6 +9,7 @@ publish.workspace = true
 workspace-core.workspace = true
 workspace-provider-boat.workspace = true
 workspace-profile-agent.workspace = true
+base64 = "0.22"
 clap.workspace = true
 serde.workspace = true
 thiserror.workspace = true

@@ -2,6 +2,7 @@ mod adapters;
 mod commands;
 mod config;
 mod files;
+mod job;
 mod ledger;
 mod relay;
 mod start;
@@ -28,10 +29,6 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one Command is parsed per run, so its size does not matter"
-)]
 enum Command {
     /// Prepare a provider account, make it the default provider and say what
     /// start will do; safe to run again
@@ -89,6 +86,8 @@ enum Command {
     /// and its provider
     #[command(visible_alias = "ls")]
     List,
+    /// Run one unattended command on a VM and bring its records back
+    Job(job::Job),
 }
 
 #[derive(Args)]
@@ -103,7 +102,7 @@ struct ProviderArgs {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(cli.command, cli.config.as_deref()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(status) => ExitCode::from(status),
         Err(error) => {
             report(error.as_ref());
             ExitCode::FAILURE
@@ -111,7 +110,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+fn run(command: Command, config_path: Option<&Path>) -> Result<u8, Box<dyn Error>> {
     let file = || config::load(config_path);
     match command {
         Command::Setup { provider } => commands::setup(provider, file()?, config_path),
@@ -143,7 +142,9 @@ fn run(command: Command, config_path: Option<&Path>) -> Result<(), Box<dyn Error
         Command::Remove { vm } => commands::remove(&vm, file()?.providers),
         Command::Snapshot { vm, name } => commands::snapshot(&vm, &name, file()?.providers),
         Command::List => commands::list(),
-    }
+        Command::Job(job) => return job::run(&job, file()?),
+    }?;
+    Ok(0)
 }
 
 fn report(error: &dyn Error) {

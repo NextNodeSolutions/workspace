@@ -1,0 +1,43 @@
+# Unattended jobs
+
+`workspace job` runs a shell command without a terminal, brings back its logs and selected results, then puts the VM away. With no name it creates a disposable VM and removes it after collecting the command result. A name creates or resumes one VM and stops it after collection, keeping its disk and record. `--keep` leaves either kind running. Stderr reports its id and the stop or remove command as soon as provisioning finishes, before upload or setup. Use `workspace stop NAME` for a named VM or `workspace remove ID` for a disposable one. A provider lifetime still applies while a job runs or is kept.
+
+For example, from a repository whose dependency installation lives in `ci/install.sh`, with `TEST_TOKEN` already exported by the caller's secret manager:
+
+```sh
+workspace job --push . --provider boat --boat-type small --boat-ttl 30m \
+  --setup ci/install.sh --env TEST_TOKEN \
+  --command 'npm run test:e2e' \
+  --artifact playwright-report --artifact junit.xml
+```
+
+Choose the TTL and the command for the work you have approved. No job prepares the provider account for you: the provider must already be set up. Provider and profile options use the same flag, config file, then default precedence as `start`.
+
+## Repository, setup, then runtime
+
+`--push DIR` requires a Git work tree. It selects the files Git tracks or does not ignore. It prepares a gzip tar in memory before creating or resuming a VM, then sends that archive over the VM shell's stdin and extracts it into the workdir before setup. It sends neither Git metadata nor a GitHub credential. Symlinks stay symlinks, and submodule contents are not traversed. A tracked file deleted locally must be removed from the index or restored before pushing it.
+
+Ignore credentials, local environment files and dependencies that should be installed remotely. Tracked files are included even when an ignore rule matches them. An upload containing an exact nonempty selected runtime value is refused, but workspace cannot recognize every credential a repository might contain. The upload has a size limit for both the uncompressed tar and its gzip archive, shown by `workspace job --help`; exceeding either fails before a VM starts.
+
+Profiles apply first, using the same name lock and early recording rules as `start`. A job holds the name lock until it returns, including upload, setup, command, collection and cleanup, so jobs of the same name cannot overwrite each other or stop a VM another job is using. Profiles retain their usual credential behavior. The upload follows. The contents of the local script named by `--setup` travel on stdin into a private remote record directory, then run with no runtime environment input and with stdin closed. Setup file contents never appear in a process argument. Setup runs before any values selected with `--env` are sent to the VM. A failed setup skips the command and keeps the VM and its record for inspection. Without `--setup`, that phase succeeds without doing work. A setup-only job runs a successful empty command afterward.
+
+Setup and command both run in the remote workdir. The default is a directory under the VM user's home. An empty `--workdir` is rejected before a VM starts. A supplied nonempty workdir is a literal path: spaces, quotes, dollar signs and shell metacharacters have no special meaning. The directory is created when needed. Setup must install dependencies and prepare the repository there before runtime injection. Workspace retains the remote shell's normal file-creation permissions for uploads, setup and command, so service configuration files can remain readable by the users that need them; private record directories protect logs and transferred setup code.
+
+Use `--env` for secrets; put plain settings such as shard indices in `--command`. Repeat `--env NAME` to select UTF-8 values inherited from the process that launches workspace, for example through `infisical run ... -- workspace job ...`. Unset names are errors before a VM starts; empty and multiline values are supported. Values travel as NUL-delimited assignments over stdin, are exported only inside the command process after setup succeeds, and are never placed in generated scripts, arguments, workspace messages, errors or local staging files. Local environment files are not an input to jobs. Keep values out of the setup script and command line themselves; detected inline values are refused.
+
+Setup and command are trusted caller code, as when running the repository locally with those credentials. This contract does not isolate hostile setup, existing profile or image credentials, process inspection, or deliberately encoded disclosures by the command.
+
+## Results and exit status
+
+Each run gets a fresh private directory under the XDG data directory's `workspace/jobs`. Stderr names that directory alongside the VM id before upload and setup. After collection and any requested cleanup succeed, stdout prints the directory, including when the command exited nonzero. The directory holds setup and command logs with their separate shell statuses, plus an `artifacts.tar` when selected artifacts were collected. If collection is incomplete, a phase-specific `.remote` record names the remote directory containing the full log and collection diagnostics. Workspace masks every exact nonempty selected runtime value in logs in memory before writing them locally; binary logs and multiline values follow the same rule.
+
+Only repeated `--artifact PATH` selections enter the artifact tar. Paths are literal, relative to the workdir and cannot contain a parent component. Directories include their contents. With no selections, only logs and statuses come back; the repository is never archived by default. Artifacts are the command's own output and are returned unmodified, so select only report or result paths safe to retain locally. Workspace saves the tar without extracting it into your machine's filesystem.
+
+Setup logs, command logs and the uncompressed artifact tar share a bounded decoded payload budget, shown by `workspace job --help`, which also gives the per-phase log capture limit. Its base64 transport fits within Boat's captured-output limit and allows reports of tens of megabytes. Missing, unreadable, oversized or invalid artifact payloads still bring back the command's shell status and bounded masked log. An oversized log brings back its status and a masked prefix with an explicit truncation marker; a safety tail is omitted to avoid exposing a secret split at the capture boundary. Artifact failure or log truncation fails collection, keeps the VM and record, and reports the remote record directory holding the full log and artifact diagnostics. Invalid framing or local filesystem errors can prevent saving the result and likewise preserve the VM. Masking and the truncation marker are applied locally after the bounded payload is decoded. Full remote records remain on the VM until its disk is removed or the caller cleans them up, so a local write or decoding failure does not erase the only copy of the logs. Named VMs can accumulate these records across runs. Full remote logs are unmasked and can contain values printed by the command. A snapshot of a named or kept VM includes those records, so remove runtime credentials, logs and job data before saving a reusable image.
+
+After a command result is collected, workspace stops a named VM or removes a disposable one, including when the command exited nonzero, unless `--keep` was given. Workspace then exits with the command's shell status, so CI observes its actual result. Setup failure is reported separately with its setup status and exits unsuccessfully. Infrastructure, profile, upload, setup or collection failure leaves the VM as it was and recommends `workspace stop NAME` for a named VM or `workspace remove ID` for a disposable one; a failure to record a newly created VM still names its id. A cleanup failure also makes workspace fail, names the VM and gives the exact stop or remove command to retry, while the collected result stays on disk.
+
+Exit status alone does not distinguish a command that exits one from a setup, infrastructure, collection or cleanup failure. A result directory on stdout identifies a fully collected command outcome whose requested cleanup also succeeded; otherwise inspect stderr and any partial local records.
+
+If recording itself fails, the error names the VM id and provider, but workspace cannot resolve that VM through a missing record. Stop billing through the provider's CLI immediately, following the [Boat recovery guidance](providers/boat.md#unrecorded-vms) when using Boat. A workspace stop or removal command is given only when there is a record to resolve.
+

@@ -17,6 +17,7 @@ workspace start dev -- pi             # runs pi on it; the VM stops when pi exit
 workspace stop dev                    # stops the VM and keeps its disk
 workspace remove dev                  # deletes the VM and its data for good
 workspace list                        # shows each recorded VM
+workspace job --push . --command 'cargo test --workspace'  # unattended, with logs returned locally
 
 workspace start image --profile pi --profile claude -d   # build an image once...
 workspace snapshot image agent                           # ...save it under a name...
@@ -59,5 +60,7 @@ stateDiagram-v2
 5. `snapshot` saves a VM under a name on the provider. Once the provider option that names a snapshot points at it, new VMs start from it, with everything the profiles installed already there, so a disposable VM is ready in seconds.
 
 A VM's name stands for its id in every command, and `list` prints both, with `-` for a disposable VM.
+
+[`job`](docs/jobs.md) runs unattended work without a terminal. It can upload a Git work tree without a GitHub credential, runs setup before injecting caller-selected runtime variables over stdin, and collects masked logs and explicitly selected artifacts into a fresh local result directory. After successful collection it returns the command's exit status and puts the VM away, unless `--keep` was given. Setup, infrastructure or collection failure keeps the VM for inspection and names the stop or remove command. Artifact failures still return the command status and bounded masked logs, with the remote record directory reported for incomplete collection.
 
 A provider is where VMs run, such as [Boat](docs/providers/boat.md). A profile is what a VM is for, such as [Pi](docs/profiles/pi.md) or [Claude Code](docs/profiles/claude.md), set up as on this machine. Both are plugins that the core knows nothing about, as [Architecture](docs/architecture.md) explains. Their options come from flags or a config file, as [Configuration](docs/configuration.md) explains. To change the code, read [AGENTS.md](AGENTS.md), which holds the rules for people and coding agents alike.
