@@ -127,7 +127,7 @@ sequenceDiagram
     A->>B: boat new, with the type, the TTL and the environment
     B-->>A: first line, with the sandbox id
     A-->>Core: sandbox id
-    Note over A,B: boat new runs on in the background until the sandbox is ready
+    Note over A,B: boat new continues in the background
     Core->>Core: record the id
     Core->>A: shell
     loop while Starting, within a time limit
@@ -136,7 +136,7 @@ sequenceDiagram
     A-->>Core: a shell, once the sandbox is Up
 ```
 
-`boat new` prints the sandbox id on its first line, before the sandbox is ready. The adapter returns it at once, which keeps the time without a record short. `shell` then waits through the starting states, and fails at once on a deleted or failed sandbox. It lets a stopped state pass for a short window, since Boat may still report a sandbox it just resumed as stopped, then fails. Boat names sandboxes itself, so the VM name lives only in the record.
+`boat new` prints the sandbox id on its first line, before the sandbox is ready. The adapter returns it at once, which keeps the time without a record short. `boat new` continues in the background. A reported error becomes a warning as soon as the adapter reads it, even if the other stream is still open. The warning names `boat new`, the sandbox id, and any recognized error code and HTTP status. Boat's JSON error events do not identify the failed follow-up request. Provider messages stay out of the warning because they can contain credentials. Output is read line by line through a queue with a fixed number of places and a line size cap, so a stream nobody reads holds Boat back instead of growing memory. The sandbox and its record remain available while Workspace checks readiness. If `boat new` has still not ended a create's time limit after the id, the adapter ends it and says that it could not confirm the result. `shell` then waits through the starting states, and fails at once on a deleted or failed sandbox. It lets a stopped state pass for a short window, since Boat may still report a sandbox it just resumed as stopped, then fails. Boat names sandboxes itself, so the VM name lives only in the record.
 
 ### `resume`
 

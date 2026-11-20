@@ -60,18 +60,28 @@ fn supervise(
     let Some(timeout) = timeout else {
         return child.wait().map_err(BoatError::pipe(subcommand));
     };
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if let Some(status) = child.try_wait().map_err(BoatError::pipe(subcommand))? {
-            return Ok(status);
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-    kill(child);
-    Err(BoatError::Stalled {
+    wait_until(subcommand, child, Instant::now() + timeout)?.ok_or(BoatError::Stalled {
         subcommand,
         seconds: timeout.as_secs(),
     })
+}
+
+pub(crate) fn wait_until(
+    subcommand: &'static str,
+    child: &mut Child,
+    deadline: Instant,
+) -> Result<Option<ExitStatus>, BoatError> {
+    loop {
+        if let Some(status) = child.try_wait().map_err(BoatError::pipe(subcommand))? {
+            return Ok(Some(status));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            kill(child);
+            return Ok(None);
+        }
+        thread::sleep(POLL_INTERVAL.min(remaining));
+    }
 }
 
 /// A command may exit before reading all its stdin, so a broken pipe here is not a failure.

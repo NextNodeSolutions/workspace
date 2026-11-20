@@ -1,12 +1,15 @@
 mod cli;
 mod environment;
 mod error;
+mod events;
+mod notice;
 mod options;
 mod process;
 mod sandbox;
 mod setup;
 mod shell;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::de::IgnoredAny;
@@ -18,6 +21,7 @@ use options::{BoatName, Settings};
 use sandbox::State;
 use shell::BoatShell;
 
+pub use notice::{Notice, Warnings};
 pub use options::Options;
 
 const START_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -33,13 +37,15 @@ const NO_SNAPSHOTS: &str = "--no-snapshots";
 
 pub struct Boat {
     settings: Settings,
+    warnings: Arc<dyn Warnings>,
 }
 
 impl Boat {
     #[must_use]
-    pub fn new(options: Options) -> Self {
+    pub fn new(options: Options, warnings: impl Warnings + 'static) -> Self {
         Self {
             settings: options.resolve(),
+            warnings: Arc::new(warnings),
         }
     }
 
@@ -73,7 +79,7 @@ impl Provider for Boat {
         if spec.is_disposable() {
             args.push(NO_SNAPSHOTS);
         }
-        let id = sandbox::create(&args)?;
+        let id = events::create(&args, &self.warnings, START_TIMEOUT)?;
         Ok(VmId::from(id))
     }
 
