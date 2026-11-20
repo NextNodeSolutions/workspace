@@ -6,6 +6,7 @@ mod ledger;
 mod relay;
 mod start;
 mod terminal;
+mod warnings;
 mod xdg;
 
 use std::error::Error;

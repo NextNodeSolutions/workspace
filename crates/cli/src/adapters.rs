@@ -3,11 +3,13 @@ use workspace_profile_agent::{Claude, Pi};
 use workspace_provider_boat::Boat;
 
 use crate::config::{Profiles, Providers};
+use crate::warnings::StderrWarnings;
 
 type Registry<F> = &'static [(&'static str, F)];
 
-const PROVIDERS: Registry<fn(Providers) -> Box<dyn Provider>> =
-    &[("boat", |options| Box::new(Boat::new(options.boat)))];
+const PROVIDERS: Registry<fn(Providers) -> Box<dyn Provider>> = &[("boat", |options| {
+    Box::new(Boat::new(options.boat, StderrWarnings))
+})];
 const PROFILES: Registry<fn(Profiles) -> Box<dyn Profile>> = &[
     ("pi", |options| Box::new(Pi::new(options.pi))),
     ("claude", |options| Box::new(Claude::new(options.claude))),
